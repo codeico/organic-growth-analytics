@@ -1,0 +1,52 @@
+{
+  "_meta": {
+    "source": "live Instagram API proof",
+    "sanitized": true,
+    "token_stored": false
+  },
+  "profile": {
+    "id": "<redacted-id>",
+    "username": "<redacted-username>",
+    "account_type": "MEDIA_CREATOR",
+    "media_count": 0
+  },
+  "account_insights": {
+    "data": [
+      {
+        "name": "reach",
+        "period": "day",
+        "title": "Akun yang dijangkau",
+        "description": "Jumlah akun unik yang sudah melihat konten Anda, setidaknya satu kali, termasuk dalam iklan. Konten mencakup postingan, cerita, reel, video, dan video siaran langsung. Jangkauan berbeda dari impresi yang mungkin mencakup beberapa tayangan konten Anda oleh akun yang sama. Metrik ini adalah estimasi dan sedang dalam pengembangan.",
+        "total_value": {
+          "value": 0
+        },
+        "id": "<redacted-id>"
+      }
+    ]
+  },
+  "media_list": {
+    "data": [
+      {
+        "id": "<redacted-id>",
+        "media_type": "IMAGE",
+        "timestamp": "<redacted-timestamp>"
+      }
+    ]
+  },
+  "media_insights": {
+    "data": [
+      {
+        "name": "reach",
+        "period": "lifetime",
+        "values": [
+          {
+            "value": 0
+          }
+        ],
+        "title": "Akun yang dijangkau",
+        "description": "Jumlah akun unik yang sudah melihat postingan ini, setidaknya satu kali. Jangkauan berbeda dengan impresi yang mungkin mencakup beberapa tayangan postingan Anda oleh akun yang sama. Metrik ini adalah estimasi.",
+        "id": "<redacted-id>"
+      }
+    ]
+  }
+}
