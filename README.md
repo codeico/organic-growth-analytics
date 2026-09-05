@@ -22,6 +22,16 @@ npm run build
 
 Browser hanya menerima publishable key Supabase dan sesi pengguna. Instagram access token, app secret, service-role key, encryption key, cron, OAuth callback, dan AI berada di Supabase Edge Functions mulai Fase 2.
 
+## Dashboard dan multi-akun
+
+Dashboard membaca akun, metrik harian, demografi agregat, dan media langsung dari tabel Supabase ber-RLS. Setiap pengguna dapat menghubungkan maksimal lima akun Instagram Professional. Browser hanya memiliki akses baca; perubahan akun dan token dilakukan oleh Edge Functions.
+
+## Konfigurasi Instagram
+
+Sebelum tombol koneksi digunakan, isi Supabase secrets `INSTAGRAM_APP_ID`, `INSTAGRAM_APP_SECRET`, `TOKEN_ENCRYPTION_KEY` (base64 32 byte), dan `APP_URL`. Tambahkan callback berikut ke OAuth redirect URI aplikasi Meta:
+
+`https://fqwpwisjsvolpoqigbms.supabase.co/functions/v1/instagram-callback`
+
 ## Belum termasuk
 
-Koneksi Instagram produksi, ingestion, dashboard data, offline snapshot privat, push, AI, dan billing belum dibangun. Fase 1 hanya auth shell, PWA installability, offline fallback publik, dan fondasi Supabase.
+Sinkronisasi insight terjadwal, offline snapshot privat, push, AI, dan billing belum dibangun. Dashboard sengaja menampilkan empty state sampai data resmi Instagram tersedia.

@@ -155,11 +155,11 @@ max_indexes = 5
 enabled = true
 # The base URL of your website. Used as an allow-list for redirects and for constructing URLs used
 # in emails.
-site_url = "http://localhost:5173"
+site_url = "https://organic-growth-analytics.vercel.app"
 # The public URL that Auth serves on. Defaults to the API external URL with `/auth/v1` appended.
 # external_url = ""
 # A list of *exact* URLs that auth providers are permitted to redirect to post authentication.
-additional_redirect_urls = ["http://localhost:5173/auth/confirm", "http://127.0.0.1:5173/auth/confirm"]
+additional_redirect_urls = ["http://localhost:5173/auth/confirm", "http://127.0.0.1:5173/auth/confirm", "https://organic-growth-analytics.vercel.app/auth/confirm"]
 # How long tokens are valid for, in seconds. Defaults to 3600 (1 hour), maximum 604,800 (1 week).
 jwt_expiry = 3600
 # JWT issuer URL. If not set, defaults to auth.external_url.
@@ -383,6 +383,16 @@ deno_version = 2
 
 # [edge_runtime.secrets]
 # secret_key = "env(SECRET_VALUE)"
+
+[functions.instagram-connect]
+enabled = true
+verify_jwt = true
+entrypoint = "./functions/instagram-connect/index.ts"
+
+[functions.instagram-callback]
+enabled = true
+verify_jwt = false
+entrypoint = "./functions/instagram-callback/index.ts"
 
 [analytics]
 enabled = true
