@@ -44,15 +44,16 @@ describe("sendMagicLink", () => {
     await expect(getCurrentUser({ auth: { getUser } })).resolves.toEqual(user);
   });
 
-  it("uses the persisted session only while offline", async () => {
+  it("uses the persisted session when validation cannot reach Supabase", async () => {
     const user = { id: "user-1", email: "creator@example.com" };
+    const getUser = vi.fn().mockRejectedValue(new TypeError("Failed to fetch"));
     const getSession = vi.fn().mockResolvedValue({
       data: { session: { user } },
       error: null,
     });
 
     await expect(
-      getCurrentUser({ auth: { getSession } }, false),
+      getCurrentUser({ auth: { getUser, getSession } }),
     ).resolves.toEqual(user);
   });
 
@@ -69,7 +70,7 @@ describe("sendMagicLink", () => {
 
     const onOffline = vi.fn();
     await expect(
-      getCurrentUser({ auth: { getUser, getSession } }, true, onOffline),
+      getCurrentUser({ auth: { getUser, getSession } }, onOffline),
     ).resolves.toEqual(user);
     expect(onOffline).toHaveBeenCalledOnce();
   });
@@ -81,7 +82,7 @@ describe("sendMagicLink", () => {
     const onOnline = vi.fn();
 
     await expect(
-      getCurrentUser({ auth: { getUser } }, true, onOffline, onOnline),
+      getCurrentUser({ auth: { getUser } }, onOffline, onOnline),
     ).resolves.toEqual(user);
     expect(onOnline).toHaveBeenCalledOnce();
     expect(onOffline).not.toHaveBeenCalled();

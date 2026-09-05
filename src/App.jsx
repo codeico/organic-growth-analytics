@@ -76,7 +76,9 @@ export default function App() {
       user: null,
     }),
   );
-  const [online, setOnline] = useState(navigator.onLine);
+  // Start optimistic: navigator.onLine is unreliable; the first server
+  // round-trip in getCurrentUser decides.
+  const [online, setOnline] = useState(true);
   const [installPrompt, setInstallPrompt] = useState(
     /** @type {BeforeInstallPromptEvent | null} */ (null),
   );
@@ -91,7 +93,6 @@ export default function App() {
       try {
         const user = await getCurrentUser(
           supabase,
-          navigator.onLine,
           () => setOnline(false),
           () => setOnline(true),
         );
@@ -102,7 +103,10 @@ export default function App() {
       }
     }
 
-    const setConnection = () => setOnline(navigator.onLine);
+    // "online" is a hint to re-validate; "offline" is ignored because Chrome
+    // fires it spuriously with VPNs/virtual adapters. Real failures surface
+    // through getCurrentUser -> onOffline.
+    const setConnection = () => loadUser();
     /** @param {Event} event */
     const captureInstall = (event) => {
       event.preventDefault();
@@ -481,7 +485,22 @@ function Dashboard({ user, online, installPrompt, updateWorker }) {
       <main id="main-content" className="dashboard">
         <div className="app-status" role="status" aria-live="polite">
           <span className={online ? "online" : "offline"}>
-            {online ? "Online" : "Offline - menampilkan snapshot terakhir"}
+            {online ? (
+              "Online"
+            ) : (
+              <>
+                Offline - menampilkan snapshot terakhir{" "}
+                <button
+                  type="button"
+                  className="status-action"
+                  // Reuses App's existing "online" listener, which re-validates
+                  // against the server.
+                  onClick={() => dispatchEvent(new Event("online"))}
+                >
+                  Coba sambungkan
+                </button>
+              </>
+            )}
           </span>
           <div>
             {installPrompt ? (

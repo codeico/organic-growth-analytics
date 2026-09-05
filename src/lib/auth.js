@@ -28,30 +28,26 @@ export async function verifyEmailCode(supabase, email, code) {
 }
 
 /**
+ * Always asks the server first: navigator.onLine is unreliable (VPNs and
+ * virtual adapters make Chrome report offline while requests succeed).
  * @param {import("@supabase/supabase-js").SupabaseClient} supabase
- * @param {boolean} online
  * @param {() => void} onOffline
  * @param {() => void} onOnline
  */
 export async function getCurrentUser(
   supabase,
-  online = true,
   onOffline = () => {},
   onOnline = () => {},
 ) {
-  if (online) {
-    try {
-      const { data, error } = await supabase.auth.getUser();
-      if (error) throw error;
-      // A completed server round-trip is the truth; it clears a stale
-      // "offline" set by an earlier transient fetch failure.
-      onOnline();
-      return data.user;
-    } catch (error) {
-      const status = /** @type {{ status?: number }} */ (error)?.status;
-      if (!(error instanceof TypeError) && status !== 0) throw error;
-      onOffline();
-    }
+  try {
+    const { data, error } = await supabase.auth.getUser();
+    if (error) throw error;
+    onOnline();
+    return data.user;
+  } catch (error) {
+    const status = /** @type {{ status?: number }} */ (error)?.status;
+    if (!(error instanceof TypeError) && status !== 0) throw error;
+    onOffline();
   }
 
   const { data, error } = await supabase.auth.getSession();
