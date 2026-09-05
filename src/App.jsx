@@ -17,6 +17,11 @@ import {
   saveDashboardSnapshot,
 } from "./lib/offline.js";
 
+// iOS never fires beforeinstallprompt; install is Share -> Add to Home Screen.
+const NEEDS_IOS_INSTALL_HINT =
+  /iPhone|iPad|iPod/.test(navigator.userAgent) &&
+  !matchMedia("(display-mode: standalone)").matches;
+
 /** @typedef {{ id: string, username: string, name?: string | null, account_type: string, profile_picture_url?: string | null, status: string, last_synced_at?: string | null, created_at: string }} InstagramAccount */
 /** @typedef {{ accountId: string | null, metrics: Array<Record<string, any>>, media: Array<Record<string, any>>, audience: Array<Record<string, any>> }} AnalyticsState */
 /** @typedef {Event & { prompt: () => Promise<void>, userChoice: Promise<{ outcome: string }> }} BeforeInstallPromptEvent */
@@ -424,6 +429,8 @@ function Dashboard({ user, online, installPrompt, updateWorker }) {
               <button className="status-action" onClick={installApp}>
                 Instal aplikasi
               </button>
+            ) : NEEDS_IOS_INSTALL_HINT ? (
+              <small>Instal: Bagikan → Tambah ke Layar Utama</small>
             ) : null}
             {updateWorker ? (
               <button className="status-action" onClick={updateApp}>
