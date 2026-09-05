@@ -1226,7 +1226,6 @@ function ContentDetail({ item }) {
     ["Komentar", formatMetric(item.comments)],
     ["Disimpan", formatMetric(item.saved)],
     ["Dibagikan", formatMetric(item.shares)],
-    ["Repost", formatMetric(item.reposts)],
     ["Total interaksi", formatMetric(item.total_interactions)],
     [
       "Engagement / reach",

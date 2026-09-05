@@ -106,11 +106,12 @@ const dataOf = (result) =>
 
 // Interaction metrics that support `period=day` + `total_value`.
 // Per-media metric sets differ by surface (see IG Media Insights reference).
+// `reposts` is documented but rejected by the API ("does not support the metrics: reposts").
 // Album children have no insights at all; CAROUSEL_ALBUM itself only the FEED set.
 const REELS_METRICS =
-  "reach,views,saved,shares,total_interactions,reposts,ig_reels_avg_watch_time,ig_reels_video_view_total_time,reels_skip_rate";
+  "reach,views,saved,shares,total_interactions,ig_reels_avg_watch_time,ig_reels_video_view_total_time,reels_skip_rate";
 const FEED_METRICS =
-  "reach,views,saved,shares,total_interactions,reposts,profile_visits,follows";
+  "reach,views,saved,shares,total_interactions,profile_visits,follows";
 /** @param {{ media_product_type?: string }} item */
 export function mediaMetrics(item) {
   return item.media_product_type === "REELS" ? REELS_METRICS : FEED_METRICS;
@@ -248,6 +249,8 @@ export async function fetchInstagramSnapshot(fetcher, token, now = new Date()) {
   }
 
   const rawMedia = dataOf(mediaResult);
+  /** @type {string[]} */
+  const mediaWarnings = [];
   const media = await Promise.all(
     rawMedia.map(async (item) => {
       let insights = {};
@@ -260,8 +263,11 @@ export async function fetchInstagramSnapshot(fetcher, token, now = new Date()) {
             })
           ).data ?? [],
         );
-      } catch {
-        // Some metrics are not available for every media type.
+      } catch (error) {
+        // Some metrics are not available for every media type; surface why.
+        mediaWarnings.push(
+          `media ${item.id}: ${error instanceof Error ? error.message : String(error)}`,
+        );
       }
       return {
         instagram_media_id: String(item.id),
@@ -279,7 +285,6 @@ export async function fetchInstagramSnapshot(fetcher, token, now = new Date()) {
         saved: insights.saved ?? null,
         shares: insights.shares ?? null,
         total_interactions: insights.total_interactions ?? null,
-        reposts: insights.reposts ?? null,
         profile_visits: insights.profile_visits ?? null,
         follows: insights.follows ?? null,
         avg_watch_time_ms: insights.ig_reels_avg_watch_time ?? null,
@@ -336,6 +341,6 @@ export async function fetchInstagramSnapshot(fetcher, token, now = new Date()) {
     breakdowns,
     media,
     audience,
-    warnings,
+    warnings: [...warnings, ...mediaWarnings.slice(0, 3)],
   };
 }
