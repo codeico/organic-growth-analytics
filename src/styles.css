@@ -1082,3 +1082,76 @@ td small {
 .media-cell:hover .media-caption {
   text-decoration: underline;
 }
+
+.content-detail .back-link {
+  display: inline-flex;
+  margin-bottom: 0.75rem;
+}
+.content-hero {
+  display: grid;
+  grid-template-columns: 160px 1fr;
+  gap: 1rem;
+  align-items: start;
+  margin-bottom: 1.25rem;
+}
+.content-hero img,
+.content-hero .media-thumb-empty {
+  width: 160px;
+  height: 160px;
+  border-radius: var(--r-md);
+  object-fit: cover;
+  border: 1px solid var(--line);
+  background: var(--canvas);
+}
+.content-caption {
+  margin: 0.25rem 0 0.75rem;
+  white-space: pre-wrap;
+  line-height: 1.5;
+}
+.content-detail h3 {
+  margin: 1.25rem 0 0.5rem;
+  font-size: 0.8rem;
+  font-weight: 600;
+  letter-spacing: 0.02em;
+  text-transform: uppercase;
+  color: var(--muted);
+}
+.stat-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(9.5rem, 1fr));
+  gap: 0.5rem;
+  margin: 0;
+}
+.stat-grid > div {
+  padding: 0.75rem 0.85rem;
+  border: 1px solid var(--line);
+  border-radius: var(--r-sm);
+  background: var(--canvas);
+}
+.stat-grid dt {
+  font-size: 0.75rem;
+  color: var(--muted);
+}
+.stat-grid dd {
+  margin: 0.15rem 0 0;
+  font-family: "Geist Mono", ui-monospace, monospace;
+  font-size: 1.15rem;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+}
+.stat-grid small {
+  display: block;
+  margin-top: 0.15rem;
+  color: var(--muted);
+  font-size: 0.7rem;
+}
+@media (max-width: 720px) {
+  .content-hero {
+    grid-template-columns: 96px 1fr;
+  }
+  .content-hero img,
+  .content-hero .media-thumb-empty {
+    width: 96px;
+    height: 96px;
+  }
+}

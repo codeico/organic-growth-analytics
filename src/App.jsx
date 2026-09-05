@@ -322,10 +322,15 @@ const VIEWS = [
   ["audience", "Audiens"],
 ];
 function readView() {
-  const key = location.hash.slice(1);
+  const key = location.hash.slice(1).split("/")[0];
   return VIEWS.some(([k]) => k === key)
     ? /** @type {View} */ (key)
     : "overview";
+}
+/** `#content/<media row id>` opens the per-content detail page. */
+function readDetailId() {
+  const [key, id] = location.hash.slice(1).split("/");
+  return key === "content" && id ? id : null;
 }
 
 /** @type {Record<string, string>} */
@@ -374,8 +379,12 @@ function Dashboard({ user, online, installPrompt, updateWorker }) {
   const selected = pickAccounts(accounts, selectedIds);
   const selectionKey = selected.map((a) => a.id).join(",");
   const [view, setView] = useState(readView);
+  const [detailId, setDetailId] = useState(readDetailId);
   useEffect(() => {
-    const onHash = () => setView(readView());
+    const onHash = () => {
+      setView(readView());
+      setDetailId(readDetailId());
+    };
     addEventListener("hashchange", onHash);
     return () => removeEventListener("hashchange", onHash);
   }, []);
@@ -681,6 +690,7 @@ function Dashboard({ user, online, installPrompt, updateWorker }) {
             analytics={analytics}
             online={online}
             view={view}
+            detailId={detailId}
           />
         ) : (
           <EmptyDashboard onConnect={connectInstagram} busy={connecting} />
@@ -751,8 +761,8 @@ function formatChange(change) {
   return `${pct >= 0 ? "+" : ""}${pct}% vs 7 hari sebelumnya`;
 }
 
-/** @param {{ accounts: InstagramAccount[], analytics: AnalyticsState, online: boolean, view: View }} props */
-function AnalyticsDashboard({ accounts, analytics, online, view }) {
+/** @param {{ accounts: InstagramAccount[], analytics: AnalyticsState, online: boolean, view: View, detailId: string | null }} props */
+function AnalyticsDashboard({ accounts, analytics, online, view, detailId }) {
   const account = accounts[0];
   const title = accountTitle(accounts);
   const [metricKey, setMetricKey] = useState("followers_count");
@@ -890,6 +900,21 @@ function AnalyticsDashboard({ accounts, analytics, online, view }) {
         </article>
       </section>
     );
+  if (view === "content" && detailId) {
+    const item = analytics.media.find((m) => String(m.id) === detailId);
+    return item ? (
+      <ContentDetail item={item} />
+    ) : (
+      <section className="dashboard-grid lower-grid">
+        <article className="panel">
+          <PanelEmpty text="Konten tidak ditemukan pada akun yang dipilih." />
+          <a className="text-button" href="#content">
+            Kembali ke konten
+          </a>
+        </article>
+      </section>
+    );
+  }
   if (view === "content")
     return (
       <section className="dashboard-grid lower-grid" id="content">
@@ -956,9 +981,7 @@ function AnalyticsDashboard({ accounts, analytics, online, view }) {
                           <td>
                             <a
                               className="media-cell"
-                              href={item.permalink || undefined}
-                              target="_blank"
-                              rel="noreferrer"
+                              href={`#content/${item.id}`}
                             >
                               {item.thumbnail_url ? (
                                 <img
@@ -1176,6 +1199,125 @@ function AiPanel({ account, merged, online }) {
             : "AI hanya membaca angka yang tersimpan dari Instagram API. Ia tidak menebak metrik yang tidak tersedia."}
         </p>
       )}
+    </section>
+  );
+}
+
+/**
+ * Per-content page. Only metrics the Graph API exposes for that surface are
+ * shown; the rest is stated as unavailable instead of rendered as 0.
+ * @param {{ item: Record<string, any> }} props
+ */
+function ContentDetail({ item }) {
+  const isReel = item.media_product_type === "REELS";
+  /** @param {unknown} num @param {unknown} den */
+  const rate = (num, den) =>
+    typeof num === "number" && typeof den === "number" && den > 0
+      ? `${((num / den) * 100).toFixed(1)}%`
+      : "—";
+  /** @param {unknown} ms */
+  const seconds = (ms) =>
+    typeof ms === "number" ? `${(ms / 1000).toFixed(1)} dtk` : "—";
+  /** @type {Array<[string, string, string?]>} */
+  const rows = [
+    ["Reach", formatMetric(item.reach), "akun unik yang melihat"],
+    ["Views", formatMetric(item.views), "total pemutaran/tayang"],
+    ["Likes", formatMetric(item.likes)],
+    ["Komentar", formatMetric(item.comments)],
+    ["Disimpan", formatMetric(item.saved)],
+    ["Dibagikan", formatMetric(item.shares)],
+    ["Repost", formatMetric(item.reposts)],
+    ["Total interaksi", formatMetric(item.total_interactions)],
+    [
+      "Engagement / reach",
+      rate(item.total_interactions, item.reach),
+      "interaksi dibagi reach",
+    ],
+    ["Simpan / reach", rate(item.saved, item.reach)],
+  ];
+  const watch = isReel
+    ? [
+        [
+          "Rata-rata ditonton",
+          seconds(item.avg_watch_time_ms),
+          "per pemutaran",
+        ],
+        ["Total waktu tonton", seconds(item.total_watch_time_ms)],
+        [
+          "Skip 3 detik pertama",
+          typeof item.skip_rate === "number"
+            ? `${(item.skip_rate * 100).toFixed(1)}%`
+            : "—",
+          "persentase penonton yang skip",
+        ],
+      ]
+    : [
+        ["Kunjungan profil", formatMetric(item.profile_visits)],
+        ["Follow dari konten ini", formatMetric(item.follows)],
+      ];
+  return (
+    <section className="dashboard-grid lower-grid" id="content-detail">
+      <article className="panel content-detail">
+        <a className="text-button back-link" href="#content">
+          ← Semua konten
+        </a>
+        <div className="content-hero">
+          {item.thumbnail_url ? (
+            <img src={item.thumbnail_url} alt="" width="160" height="160" />
+          ) : (
+            <span className="media-thumb-empty" />
+          )}
+          <div>
+            <p className="section-index">
+              {item.media_product_type ?? item.media_type} ·{" "}
+              {formatDate(item.published_at)}
+            </p>
+            <p className="content-caption">
+              {item.caption?.trim() || "(tanpa caption)"}
+            </p>
+            {item.permalink ? (
+              <a
+                className="text-button"
+                href={item.permalink}
+                target="_blank"
+                rel="noreferrer"
+              >
+                Buka di Instagram ↗
+              </a>
+            ) : null}
+          </div>
+        </div>
+        <h3>Performa</h3>
+        <dl className="stat-grid">
+          {rows.map(([label, value, note]) => (
+            <div key={label}>
+              <dt>{label}</dt>
+              <dd>{value}</dd>
+              {note ? <small>{note}</small> : null}
+            </div>
+          ))}
+        </dl>
+        <h3>{isReel ? "Waktu tonton" : "Dampak ke profil"}</h3>
+        <dl className="stat-grid">
+          {watch.map(([label, value, note]) => (
+            <div key={label}>
+              <dt>{label}</dt>
+              <dd>{value}</dd>
+              {note ? <small>{note}</small> : null}
+            </div>
+          ))}
+        </dl>
+        <p className="hint">
+          {isReel
+            ? "Waktu tonton dan skip rate hanya tersedia untuk Reels."
+            : "Kunjungan profil dan follow hanya tersedia untuk post feed."}{" "}
+          Audiens per konten (usia/kota/gender) tidak disediakan API resmi
+          Instagram; lihat halaman Audiens untuk demografi akun.
+          {item.insights_synced_at
+            ? ` Diperbarui ${formatDate(item.insights_synced_at)}.`
+            : " Metrik lengkap terisi setelah sinkronisasi berikutnya."}
+        </p>
+      </article>
     </section>
   );
 }

@@ -105,6 +105,17 @@ const dataOf = (result) =>
   result.status === "fulfilled" ? (result.value.data ?? []) : [];
 
 // Interaction metrics that support `period=day` + `total_value`.
+// Per-media metric sets differ by surface (see IG Media Insights reference).
+// Album children have no insights at all; CAROUSEL_ALBUM itself only the FEED set.
+const REELS_METRICS =
+  "reach,views,saved,shares,total_interactions,reposts,ig_reels_avg_watch_time,ig_reels_video_view_total_time,reels_skip_rate";
+const FEED_METRICS =
+  "reach,views,saved,shares,total_interactions,reposts,profile_visits,follows";
+/** @param {{ media_product_type?: string }} item */
+export function mediaMetrics(item) {
+  return item.media_product_type === "REELS" ? REELS_METRICS : FEED_METRICS;
+}
+
 const DAILY_TOTALS =
   "views,accounts_engaged,total_interactions,likes,comments,saves,shares,replies,profile_links_taps";
 // Only reach supports `time_series` in practice (views returns [] despite docs),
@@ -245,7 +256,7 @@ export async function fetchInstagramSnapshot(fetcher, token, now = new Date()) {
           (
             await graph(fetcher, `/${item.id}/insights`, {
               ...access,
-              metric: "reach,views,saved,shares,total_interactions",
+              metric: mediaMetrics(item),
             })
           ).data ?? [],
         );
@@ -268,6 +279,13 @@ export async function fetchInstagramSnapshot(fetcher, token, now = new Date()) {
         saved: insights.saved ?? null,
         shares: insights.shares ?? null,
         total_interactions: insights.total_interactions ?? null,
+        reposts: insights.reposts ?? null,
+        profile_visits: insights.profile_visits ?? null,
+        follows: insights.follows ?? null,
+        avg_watch_time_ms: insights.ig_reels_avg_watch_time ?? null,
+        total_watch_time_ms: insights.ig_reels_video_view_total_time ?? null,
+        skip_rate: insights.reels_skip_rate ?? null,
+        insights_synced_at: new Date().toISOString(),
       };
     }),
   );

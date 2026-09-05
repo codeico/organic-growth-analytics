@@ -162,10 +162,14 @@ describe("Instagram sync", () => {
         });
       }
       if (url.pathname.endsWith("/media-1/insights")) {
+        expect(p.get("metric")).toContain("ig_reels_avg_watch_time");
+        expect(p.get("metric")).not.toContain("profile_visits");
         return response({
           data: [
             { name: "views", values: [{ value: 900 }] },
             { name: "reach", values: [{ value: 500 }] },
+            { name: "ig_reels_avg_watch_time", values: [{ value: 7300 }] },
+            { name: "reels_skip_rate", values: [{ value: 0.42 }] },
           ],
         });
       }
@@ -313,6 +317,9 @@ describe("Instagram sync", () => {
     expect(snapshot.media[0]).toMatchObject({
       media_product_type: "REELS",
       views: 900,
+      avg_watch_time_ms: 7300,
+      skip_rate: 0.42,
+      profile_visits: null,
     });
     const ts = fetcher.mock.calls
       .map(([i]) => new URL(String(i)))
