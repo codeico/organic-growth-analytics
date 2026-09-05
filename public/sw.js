@@ -1,4 +1,4 @@
-const CACHE = "oga-shell-v4";
+const CACHE = "oga-shell-v5";
 const SHELL = [
   "/offline.html",
   "/manifest.webmanifest",
@@ -40,17 +40,16 @@ self.addEventListener("message", (event) => {
 
 self.addEventListener("activate", (event) => {
   event.waitUntil(
-    caches
-      .keys()
-      .then((keys) =>
-        Promise.all(
-          keys
-            .filter((key) => key.startsWith("oga-shell-") && key !== CACHE)
-            .map((key) => caches.delete(key)),
-        ),
-      ),
+    (async () => {
+      const keys = await caches.keys();
+      await Promise.all(
+        keys
+          .filter((key) => key.startsWith("oga-shell-") && key !== CACHE)
+          .map((key) => caches.delete(key)),
+      );
+      await self.clients.claim();
+    })(),
   );
-  self.clients.claim();
 });
 
 self.addEventListener("fetch", (event) => {
@@ -61,10 +60,12 @@ self.addEventListener("fetch", (event) => {
 
   if (event.request.mode === "navigate") {
     event.respondWith(
-      fetch(event.request).catch(
-        async () =>
-          (await caches.match("/index.html")) ?? caches.match("/offline.html"),
-      ),
+      fetch(event.request).catch(async () => {
+        const cache = await caches.open(CACHE);
+        return (
+          (await cache.match("/index.html")) ?? cache.match("/offline.html")
+        );
+      }),
     );
     return;
   }

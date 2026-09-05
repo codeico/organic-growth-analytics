@@ -5,14 +5,16 @@ const sw = readFileSync(new URL("../public/sw.js", import.meta.url), "utf8");
 
 describe("service worker", () => {
   it("precaches the public app shell without private data", () => {
-    expect(sw).toContain('const CACHE = "oga-shell-v4"');
+    expect(sw).toContain('const CACHE = "oga-shell-v5"');
     expect(sw).toContain('"/index.html"');
     expect(sw).toContain('"/offline.html"');
     expect(sw).not.toMatch(/token|functions\/v1/);
   });
 
-  it("serves the app shell and its built assets for offline navigation", () => {
-    expect(sw).toContain('caches.match("/index.html")');
+  it("serves only the current app shell and its built assets offline", () => {
+    expect(sw).toContain("caches.open(CACHE)");
+    expect(sw).toContain('cache.match("/index.html")');
+    expect(sw).not.toContain('caches.match("/index.html")');
     expect(sw).toMatch(/response(?:\.clone\(\))?\.text\(\)/);
     expect(sw).toContain("/assets/");
     expect(sw).toContain("Promise.allSettled");
