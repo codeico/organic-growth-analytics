@@ -13,6 +13,7 @@ describe("Instagram OAuth Edge Functions", () => {
     expect(source).toContain("auth.getUser");
     expect(source).toContain('from("instagram_oauth_states")');
     expect(source).toContain("instagram_business_manage_insights");
+    expect(source).toContain("x-client-info");
   });
 
   it("exchanges codes server-side and encrypts long-lived tokens", () => {

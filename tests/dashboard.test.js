@@ -63,4 +63,20 @@ describe("dashboard data", () => {
     ).resolves.toBe("https://instagram.com/oauth/authorize");
     expect(invoke).toHaveBeenCalledWith("instagram-connect");
   });
+
+  it("surfaces a safe server error when Instagram secrets are missing", async () => {
+    const invoke = vi.fn().mockResolvedValue({
+      data: null,
+      error: {
+        context: {
+          json: vi.fn().mockResolvedValue({
+            error: "Koneksi Instagram belum dikonfigurasi",
+          }),
+        },
+      },
+    });
+    await expect(
+      beginInstagramConnection({ functions: { invoke } }),
+    ).rejects.toThrow("Koneksi Instagram belum dikonfigurasi");
+  });
 });

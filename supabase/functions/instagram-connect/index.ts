@@ -1,12 +1,15 @@
 import { createClient } from "npm:@supabase/supabase-js@2";
 
+const cors = {
+  "access-control-allow-origin": "*",
+  "access-control-allow-headers":
+    "authorization, apikey, content-type, x-client-info",
+};
+
 const json = (body: unknown, status = 200) =>
   new Response(JSON.stringify(body), {
     status,
-    headers: {
-      "content-type": "application/json",
-      "access-control-allow-origin": "*",
-    },
+    headers: { "content-type": "application/json", ...cors },
   });
 
 const hash = async (value: string) => {
@@ -21,12 +24,7 @@ const hash = async (value: string) => {
 
 Deno.serve(async (request) => {
   if (request.method === "OPTIONS")
-    return new Response(null, {
-      headers: {
-        "access-control-allow-origin": "*",
-        "access-control-allow-headers": "authorization, apikey, content-type",
-      },
-    });
+    return new Response(null, { headers: cors });
   const authorization = request.headers.get("authorization");
   if (!authorization) return json({ error: "Sesi diperlukan" }, 401);
 

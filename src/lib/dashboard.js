@@ -60,7 +60,10 @@ export function buildTrendPoints(rows, width, height) {
 /** @param {import("@supabase/supabase-js").SupabaseClient} client */
 export async function beginInstagramConnection(client) {
   const { data, error } = await client.functions.invoke("instagram-connect");
-  if (error) throw error;
+  if (error) {
+    const body = await error.context?.json?.().catch(() => null);
+    throw new Error(body?.error ?? "Koneksi Instagram belum tersedia");
+  }
   if (!data?.url) throw new Error("URL koneksi Instagram tidak tersedia");
   return data.url;
 }

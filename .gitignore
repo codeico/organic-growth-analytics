@@ -3,6 +3,9 @@ dist/
 coverage/
 .env*
 !.env.example
+.vercel/
+.hermes/
+.playwright-mcp/
 supabase/.temp/
 *.tsbuildinfo
 .DS_Store
