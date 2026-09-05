@@ -169,7 +169,13 @@ function Login() {
         await verifyEmailCode(supabase, email, code);
         // onAuthStateChange in App routes to the dashboard.
       } else {
-        await sendMagicLink(supabase, email, location.origin);
+        try {
+          await sendMagicLink(supabase, email, location.origin);
+        } catch (error) {
+          // Rate-limited means an email was already sent; let them use it.
+          if (/** @type {{ status?: number }} */ (error)?.status !== 429)
+            throw error;
+        }
         setSent(true);
         setMessage(
           "Email terkirim. Masukkan kode 8 digit dari email tersebut.",
