@@ -14,6 +14,21 @@ export async function sendMagicLink(supabase, email, origin) {
 
 /**
  * @param {import("@supabase/supabase-js").SupabaseClient} supabase
+ * @param {string} email
+ * @param {string} code
+ */
+export async function verifyEmailCode(supabase, email, code) {
+  const { error } = await supabase.auth.verifyOtp({
+    email: email.trim().toLowerCase(),
+    token: code.replace(/\s+/g, ""),
+    type: "email",
+  });
+
+  if (error) throw error;
+}
+
+/**
+ * @param {import("@supabase/supabase-js").SupabaseClient} supabase
  * @param {boolean} online
  * @param {() => void} onOffline
  */

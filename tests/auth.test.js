@@ -3,6 +3,7 @@ import {
   confirmMagicLink,
   getCurrentUser,
   sendMagicLink,
+  verifyEmailCode,
 } from "../src/lib/auth.js";
 
 describe("sendMagicLink", () => {
@@ -18,6 +19,22 @@ describe("sendMagicLink", () => {
     expect(signInWithOtp).toHaveBeenCalledWith({
       email: "creator@example.com",
       options: { emailRedirectTo: "https://app.example/auth/confirm" },
+    });
+  });
+
+  it("signs in with the emailed code so installed PWAs never need the link", async () => {
+    const verifyOtp = vi.fn().mockResolvedValue({ error: null });
+
+    await verifyEmailCode(
+      { auth: { verifyOtp } },
+      " Creator@Example.com ",
+      " 1234 5678 ",
+    );
+
+    expect(verifyOtp).toHaveBeenCalledWith({
+      email: "creator@example.com",
+      token: "12345678",
+      type: "email",
     });
   });
 

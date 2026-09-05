@@ -1,5 +1,10 @@
 import { useEffect, useState } from "react";
-import { confirmMagicLink, getCurrentUser, sendMagicLink } from "./lib/auth.js";
+import {
+  confirmMagicLink,
+  getCurrentUser,
+  sendMagicLink,
+  verifyEmailCode,
+} from "./lib/auth.js";
 import { routeForUser } from "./lib/access.js";
 import {
   beginInstagramConnection,
@@ -149,6 +154,8 @@ function LoadingScreen() {
 
 function Login() {
   const [email, setEmail] = useState("");
+  const [code, setCode] = useState("");
+  const [sent, setSent] = useState(false);
   const [message, setMessage] = useState("");
   const [busy, setBusy] = useState(false);
 
@@ -158,11 +165,19 @@ function Login() {
     setBusy(true);
     setMessage("");
     try {
-      await sendMagicLink(supabase, email, location.origin);
-      setMessage("Tautan masuk telah dikirim. Periksa email Anda.");
+      if (sent) {
+        await verifyEmailCode(supabase, email, code);
+        // onAuthStateChange in App routes to the dashboard.
+      } else {
+        await sendMagicLink(supabase, email, location.origin);
+        setSent(true);
+        setMessage(
+          "Email terkirim. Masukkan kode 8 digit dari email tersebut.",
+        );
+      }
     } catch (error) {
       setMessage(
-        error instanceof Error ? error.message : "Gagal mengirim tautan masuk.",
+        error instanceof Error ? error.message : "Gagal memproses permintaan.",
       );
     } finally {
       setBusy(false);
@@ -183,7 +198,11 @@ function Login() {
       </section>
       <form className="login-form" onSubmit={submit}>
         <h2>Masuk</h2>
-        <p>Kami akan mengirim tautan sekali pakai ke email Anda.</p>
+        <p>
+          {sent
+            ? "Ketik kode dari email, atau klik tautan di email jika Anda memakai browser."
+            : "Kami akan mengirim kode dan tautan sekali pakai ke email Anda."}
+        </p>
         <label htmlFor="email">Email</label>
         <input
           id="email"
@@ -192,12 +211,42 @@ function Login() {
           value={email}
           onChange={(event) => setEmail(event.target.value)}
           required
+          readOnly={sent}
           autoComplete="email"
           spellCheck="false"
         />
+        {sent ? (
+          <>
+            <label htmlFor="code">Kode 8 digit</label>
+            <input
+              id="code"
+              name="code"
+              inputMode="numeric"
+              autoComplete="one-time-code"
+              pattern="[0-9 ]*"
+              value={code}
+              onChange={(event) => setCode(event.target.value)}
+              required
+              autoFocus
+            />
+          </>
+        ) : null}
         <button disabled={busy}>
-          {busy ? "Mengirim…" : "Kirim tautan masuk"}
+          {busy ? "Memproses…" : sent ? "Masuk" : "Kirim kode masuk"}
         </button>
+        {sent ? (
+          <button
+            type="button"
+            className="text-button"
+            onClick={() => {
+              setSent(false);
+              setCode("");
+              setMessage("");
+            }}
+          >
+            Ganti email
+          </button>
+        ) : null}
         <p className="form-message" aria-live="polite">
           {message}
         </p>
