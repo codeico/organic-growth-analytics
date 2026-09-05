@@ -838,13 +838,42 @@ td small {
 .ai-answer {
   margin: 0;
   padding: 1rem 1.1rem;
-  white-space: pre-wrap;
-  overflow-wrap: anywhere;
-  font: inherit;
-  font-size: 0.92rem;
-  line-height: 1.6;
-  background: var(--canvas);
   border-radius: var(--r-sm);
+  background: var(--canvas);
+  border: 1px solid var(--line);
+  font-size: 0.92rem;
+  line-height: 1.55;
+}
+.ai-answer h4,
+.ai-answer h5 {
+  margin: 0.9rem 0 0.35rem;
+  font-size: 0.8rem;
+  font-weight: 600;
+  letter-spacing: 0.02em;
+  text-transform: uppercase;
+  color: var(--muted);
+}
+.ai-answer h5 {
+  text-transform: none;
+  font-size: 0.92rem;
+  color: var(--ink);
+}
+.ai-answer > :first-child {
+  margin-top: 0;
+}
+.ai-answer p {
+  margin: 0 0 0.5rem;
+}
+.ai-answer ul,
+.ai-answer ol {
+  margin: 0 0 0.5rem;
+  padding-left: 1.2rem;
+}
+.ai-answer li {
+  margin: 0.2rem 0;
+}
+.ai-answer li::marker {
+  color: var(--muted);
 }
 .panel-empty {
   min-height: 10rem;

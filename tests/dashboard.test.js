@@ -6,6 +6,8 @@ import {
   buildMetricSummary,
   buildTrendPoints,
   mergeAnalytics,
+  parseInline,
+  parseMarkdown,
   pickAccounts,
   sumWindow,
   summarizeContent,
@@ -261,5 +263,23 @@ describe("dashboard data", () => {
       requestInstagramSync({ functions: { invoke } }),
     ).resolves.toEqual([{ account_id: "account-a", status: "succeeded" }]);
     expect(invoke).toHaveBeenCalledWith("instagram-sync");
+  });
+
+  it("parses the AI markdown subset into blocks without touching HTML", () => {
+    const blocks = parseMarkdown(
+      "## Temuan\n- reach **13.391**\n- views 27.106\n\n## Langkah\n1. Posting jam 19:00\n2. Ulangi reels\nCatatan <b>x</b>",
+    );
+    expect(blocks).toEqual([
+      { type: "h2", text: "Temuan" },
+      { type: "ul", items: ["reach **13.391**", "views 27.106"] },
+      { type: "h2", text: "Langkah" },
+      { type: "ol", items: ["Posting jam 19:00", "Ulangi reels"] },
+      { type: "p", text: "Catatan <b>x</b>" },
+    ]);
+    expect(parseInline("reach **13.391** naik")).toEqual([
+      { bold: false, text: "reach " },
+      { bold: true, text: "13.391" },
+      { bold: false, text: " naik" },
+    ]);
   });
 });

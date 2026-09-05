@@ -1,16 +1,36 @@
 const MODES = {
-  summary:
-    "Buat ringkasan performa 30 hari terakhir: 3-5 poin temuan utama dengan angka, lalu 3 rekomendasi konkret yang bisa dilakukan minggu ini. Sebutkan bila suatu metrik tidak tersedia.",
-  ask: "Jawab pertanyaan pengguna hanya berdasarkan data di atas. Jika data tidak cukup untuk menjawab, katakan apa yang tidak tersedia.",
-  captions:
-    "Analisis caption konten teratas vs terbawah: pola panjang, hook pembuka, CTA, emoji, hashtag. Simpulkan pola yang terbukti bekerja untuk akun INI, bukan tips umum.",
-  ideas:
-    "Usulkan 5 ide konten baru yang meniru pola konten berperforma terbaik akun ini (jenis, tema, jam tayang). Setiap ide: judul, format, hook kalimat pertama, alasan berbasis data.",
+  summary: `Buat ringkasan performa 30 hari terakhir. Gunakan PERSIS struktur ini:
+## Temuan utama
+- 3-5 poin, tiap poin satu kalimat dengan angka dari data
+## Rekomendasi minggu ini
+1. 3 langkah konkret, tiap langkah satu kalimat, mulai dengan kata kerja
+## Tidak tersedia
+- metrik yang tidak ada di data (tulis "-" jika semua tersedia)`,
+  ask: `Jawab pertanyaan pengguna hanya dari data. Struktur:
+## Jawaban
+Satu paragraf pendek (maks 3 kalimat) dengan angka.
+## Dasar angka
+- 2-4 poin angka yang dipakai
+## Tidak tersedia
+- data yang dibutuhkan tapi tidak ada (tulis "-" jika tidak ada)`,
+  captions: `Analisis caption konten teratas vs terbawah akun INI (bukan tips umum). Struktur:
+## Pola yang bekerja
+- 3-4 poin: pola + bukti (sebut konten & angkanya)
+## Pola yang tidak bekerja
+- 2-3 poin: pola + bukti
+## Template caption
+Satu contoh caption baru (maks 3 baris) yang memakai pola yang bekerja.`,
+  ideas: `Usulkan 5 ide konten yang meniru konten berperforma terbaik akun ini. Untuk tiap ide gunakan PERSIS format:
+### 1. Judul ide
+- **Format:** REELS / FEED / CAROUSEL
+- **Hook:** kalimat pertama caption
+- **Kapan:** hari & jam WIB dari data
+- **Alasan:** satu kalimat dengan angka dari data`,
 };
 
 const SYSTEM = `Anda analis pertumbuhan Instagram untuk akun Professional. Bahasa Indonesia, ringkas, berorientasi tindakan.
 Aturan keras: gunakan HANYA angka yang ada di data. Jangan mengarang metrik, tren, atau benchmark. Jika sesuatu tidak tersedia di data, tulis "tidak tersedia". Jangan menyebut sumber trafik (Explore/Home/hashtag) karena API tidak menyediakannya.
-Format: markdown ringan (poin, bold seperlunya), maksimal ~250 kata.`;
+Format: ikuti struktur heading yang diminta TUGAS apa adanya. Hanya heading (##/###), poin (-), nomor (1.), dan **bold**. Tanpa tabel, tanpa blok kode, tanpa kalimat pembuka/penutup. Maksimal ~250 kata.`;
 
 /** @param {unknown} v */
 const n = (v) => (typeof v === "number" ? v : null);

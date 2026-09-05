@@ -17,6 +17,8 @@ import {
   requestAiInsight,
   sumWindow,
   summarizeContent,
+  parseInline,
+  parseMarkdown,
 } from "./lib/dashboard.js";
 import { supabase } from "./lib/supabase.js";
 import {
@@ -1068,6 +1070,35 @@ function AnalyticsDashboard({ accounts, analytics, online, view }) {
   );
 }
 
+/** @param {{ text: string }} props */
+function AiAnswer({ text }) {
+  /** @param {string} t */
+  const inline = (t) =>
+    parseInline(t).map((seg, i) =>
+      seg.bold ? <strong key={i}>{seg.text}</strong> : seg.text,
+    );
+  return (
+    <div className="ai-answer">
+      {parseMarkdown(text).map((block, i) => {
+        if (block.type === "h2")
+          return <h4 key={i}>{inline(block.text ?? "")}</h4>;
+        if (block.type === "h3")
+          return <h5 key={i}>{inline(block.text ?? "")}</h5>;
+        if (block.type === "p")
+          return <p key={i}>{inline(block.text ?? "")}</p>;
+        const List = block.type === "ol" ? "ol" : "ul";
+        return (
+          <List key={i}>
+            {(block.items ?? []).map((item, j) => (
+              <li key={j}>{inline(item)}</li>
+            ))}
+          </List>
+        );
+      })}
+    </div>
+  );
+}
+
 /** @param {{ account: InstagramAccount, merged: boolean, online: boolean }} props */
 function AiPanel({ account, merged, online }) {
   const accountId = account.id;
@@ -1137,7 +1168,7 @@ function AiPanel({ account, merged, online }) {
         </p>
       ) : null}
       {answer ? (
-        <pre className="ai-answer">{answer}</pre>
+        <AiAnswer text={answer} />
       ) : (
         <p className="hint">
           {merged

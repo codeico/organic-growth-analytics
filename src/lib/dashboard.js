@@ -333,3 +333,50 @@ export async function loadAccountAnalytics(client, accountIds) {
     }),
   );
 }
+
+/**
+ * Renders the small markdown subset the AI is told to use (##/### headings,
+ * -/1. lists, **bold**, paragraphs) into React elements. No HTML is ever
+ * injected, so model output cannot script the page.
+ * ponytail: subset renderer; swap for a markdown lib if prompts grow tables/links.
+ * @param {string} text
+ */
+export function parseMarkdown(text) {
+  /** @type {Array<{ type: "h2" | "h3" | "p" | "ul" | "ol", text?: string, items?: string[] }>} */
+  const blocks = [];
+  for (const raw of text.split("\n")) {
+    const line = raw.trim();
+    if (!line) continue;
+    const h = /^(#{2,3})\s+(.*)$/.exec(line);
+    if (h) {
+      blocks.push({ type: h[1].length === 2 ? "h2" : "h3", text: h[2] });
+      continue;
+    }
+    const li = /^(?:[-*•]|\d+[.)])\s+(.*)$/.exec(line);
+    if (li) {
+      const type = /^\d/.test(line) ? "ol" : "ul";
+      const last = blocks.at(-1);
+      if (last && last.type === type && last.items) last.items.push(li[1]);
+      else blocks.push({ type, items: [li[1]] });
+      continue;
+    }
+    blocks.push({ type: "p", text: line });
+  }
+  return blocks;
+}
+
+/**
+ * Splits `**bold**` runs into alternating plain/bold segments.
+ * @param {string} text
+ * @returns {Array<{ bold: boolean, text: string }>}
+ */
+export function parseInline(text) {
+  return text
+    .split(/(\*\*[^*]+\*\*)/)
+    .filter(Boolean)
+    .map((part) =>
+      part.startsWith("**") && part.endsWith("**")
+        ? { bold: true, text: part.slice(2, -2) }
+        : { bold: false, text: part },
+    );
+}
