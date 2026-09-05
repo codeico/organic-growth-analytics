@@ -13,7 +13,10 @@ import {
   buildTrendPoints,
   listInstagramAccounts,
   loadAccountAnalytics,
-  pickAccount,
+  pickAccounts,
+  requestAiInsight,
+  sumWindow,
+  summarizeContent,
 } from "./lib/dashboard.js";
 import { supabase } from "./lib/supabase.js";
 import {
@@ -28,7 +31,7 @@ const NEEDS_IOS_INSTALL_HINT =
   !matchMedia("(display-mode: standalone)").matches;
 
 /** @typedef {{ id: string, username: string, name?: string | null, account_type: string, profile_picture_url?: string | null, status: string, last_synced_at?: string | null, created_at: string }} InstagramAccount */
-/** @typedef {{ accountId: string | null, metrics: Array<Record<string, any>>, media: Array<Record<string, any>>, audience: Array<Record<string, any>> }} AnalyticsState */
+/** @typedef {{ accountId: string | null, metrics: Array<Record<string, any>>, media: Array<Record<string, any>>, audience: Array<Record<string, any>>, breakdowns?: Array<Record<string, any>> }} AnalyticsState */
 /** @typedef {Event & { prompt: () => Promise<void>, userChoice: Promise<{ outcome: string }> }} BeforeInstallPromptEvent */
 /** @type {AnalyticsState} */
 const emptyAnalytics = {
@@ -296,14 +299,68 @@ function Confirming() {
   );
 }
 
+/** @param {InstagramAccount[]} accounts */
+const accountTitle = (accounts) =>
+  accounts.length > 1
+    ? `${accounts.length} akun gabungan`
+    : `@${accounts[0]?.username ?? ""}`;
+/** @param {InstagramAccount[]} accounts */
+const lastSynced = (accounts) =>
+  accounts
+    .map((a) => a.last_synced_at ?? "")
+    .sort()
+    .at(-1) || null;
+
+/** @typedef {"overview" | "trend" | "content" | "audience"} View */
+/** @type {Array<[View, string]>} */
+const VIEWS = [
+  ["overview", "Ringkasan"],
+  ["trend", "Pertumbuhan"],
+  ["content", "Konten"],
+  ["audience", "Audiens"],
+];
+function readView() {
+  const key = location.hash.slice(1);
+  return VIEWS.some(([k]) => k === key)
+    ? /** @type {View} */ (key)
+    : "overview";
+}
+
+/** @type {Record<string, string>} */
+const THEME_LABEL = {
+  system: "Tema mengikuti sistem. Klik untuk tema terang.",
+  light: "Tema terang. Klik untuk tema gelap.",
+  dark: "Tema gelap. Klik untuk mengikuti sistem.",
+};
+const THEMES = Object.keys(THEME_LABEL);
+function ThemeToggle() {
+  const [theme, setTheme] = useState(
+    () => localStorage.getItem("theme") ?? "system",
+  );
+  useEffect(() => {
+    document.documentElement.dataset.theme = theme;
+    localStorage.setItem("theme", theme);
+  }, [theme]);
+  return (
+    <button
+      type="button"
+      className="icon-button"
+      data-theme={theme}
+      aria-label={THEME_LABEL[theme]}
+      title={THEME_LABEL[theme]}
+      onClick={() =>
+        setTheme(THEMES[(THEMES.indexOf(theme) + 1) % THEMES.length])
+      }
+    />
+  );
+}
+
 /** @param {{ user: import("@supabase/supabase-js").User, online: boolean, installPrompt: BeforeInstallPromptEvent | null, updateWorker: ServiceWorker | null }} props */
 function Dashboard({ user, online, installPrompt, updateWorker }) {
   const [accounts, setAccounts] = useState(
     /** @type {InstagramAccount[]} */ ([]),
   );
-  const [selectedId, setSelectedId] = useState(
-    /** @type {string | null} */ (null),
-  );
+  const [selectedIds, setSelectedIds] = useState(/** @type {string[]} */ ([]));
   const [analytics, setAnalytics] = useState(
     /** @type {AnalyticsState} */ (emptyAnalytics),
   );
@@ -312,7 +369,14 @@ function Dashboard({ user, online, installPrompt, updateWorker }) {
   const [syncing, setSyncing] = useState(false);
   const [error, setError] = useState("");
 
-  const selected = pickAccount(accounts, selectedId);
+  const selected = pickAccounts(accounts, selectedIds);
+  const selectionKey = selected.map((a) => a.id).join(",");
+  const [view, setView] = useState(readView);
+  useEffect(() => {
+    const onHash = () => setView(readView());
+    addEventListener("hashchange", onHash);
+    return () => removeEventListener("hashchange", onHash);
+  }, []);
 
   useEffect(() => {
     let active = true;
@@ -323,7 +387,7 @@ function Dashboard({ user, online, installPrompt, updateWorker }) {
         if (!active) return;
         if (snapshot) {
           setAccounts(/** @type {InstagramAccount[]} */ (snapshot.accounts));
-          setSelectedId(/** @type {string | null} */ (snapshot.selectedId));
+          setSelectedIds(/** @type {string[]} */ (snapshot.selectedIds ?? []));
           setAnalytics(/** @type {AnalyticsState} */ (snapshot.analytics));
         }
         setLoading(false);
@@ -334,7 +398,9 @@ function Dashboard({ user, online, installPrompt, updateWorker }) {
         const rows = await listInstagramAccounts(supabase);
         if (!active) return;
         setAccounts(rows);
-        setSelectedId((current) => pickAccount(rows, current)?.id ?? null);
+        setSelectedIds((current) =>
+          pickAccounts(rows, current).map((a) => a.id),
+        );
       } catch (reason) {
         if (active)
           setError(
@@ -354,11 +420,11 @@ function Dashboard({ user, online, installPrompt, updateWorker }) {
   }, [online, user.id]);
 
   useEffect(() => {
-    if (!selected?.id || !online) return;
+    if (!selectionKey || !online) return;
     let active = true;
-    loadAccountAnalytics(supabase, selected.id)
+    loadAccountAnalytics(supabase, selectionKey.split(","))
       .then((data) => {
-        if (active) setAnalytics({ accountId: selected.id, ...data });
+        if (active) setAnalytics({ accountId: selectionKey, ...data });
       })
       .catch((reason) => {
         if (active)
@@ -369,22 +435,22 @@ function Dashboard({ user, online, installPrompt, updateWorker }) {
     return () => {
       active = false;
     };
-  }, [online, selected?.id]);
+  }, [online, selectionKey]);
 
   useEffect(() => {
     if (
       !online ||
       !user.id ||
-      !selected?.id ||
-      analytics.accountId !== selected.id
+      !selectionKey ||
+      analytics.accountId !== selectionKey
     )
       return;
     saveDashboardSnapshot(caches, user.id, {
       accounts,
-      selectedId: selected.id,
+      selectedIds: selectionKey.split(","),
       analytics,
     }).catch(() => undefined);
-  }, [accounts, analytics, online, selected?.id, user.id]);
+  }, [accounts, analytics, online, selectionKey, user.id]);
 
   async function installApp() {
     if (!installPrompt) return;
@@ -409,9 +475,12 @@ function Dashboard({ user, online, installPrompt, updateWorker }) {
       const results = await requestInstagramSync(supabase);
       if (results.some((result) => result.status === "failed"))
         throw new Error("Sebagian data Instagram gagal disinkronkan.");
-      if (selected?.id) {
-        const data = await loadAccountAnalytics(supabase, selected.id);
-        setAnalytics({ accountId: selected.id, ...data });
+      if (selectionKey) {
+        const data = await loadAccountAnalytics(
+          supabase,
+          selectionKey.split(","),
+        );
+        setAnalytics({ accountId: selectionKey, ...data });
       }
       const rows = await listInstagramAccounts(supabase);
       setAccounts(rows);
@@ -467,15 +536,20 @@ function Dashboard({ user, online, installPrompt, updateWorker }) {
           <strong>Organic Growth</strong>
         </a>
         <nav aria-label="Navigasi dashboard">
-          <a className="active" href="#overview">
-            Ringkasan
-          </a>
-          <a href="#trend">Pertumbuhan</a>
-          <a href="#content">Konten</a>
-          <a href="#audience">Audiens</a>
+          {VIEWS.map(([key, label]) => (
+            <a
+              key={key}
+              href={`#${key}`}
+              className={view === key ? "active" : undefined}
+              aria-current={view === key ? "page" : undefined}
+            >
+              {label}
+            </a>
+          ))}
         </nav>
         <div className="sidebar-footer">
           <p>{user.email}</p>
+          <ThemeToggle />
           <button className="text-button" onClick={logout}>
             Keluar
           </button>
@@ -517,32 +591,55 @@ function Dashboard({ user, online, installPrompt, updateWorker }) {
             ) : null}
           </div>
         </div>
-        <header className="dashboard-header" id="overview">
+        <header
+          className="dashboard-header"
+          id="overview"
+          hidden={view !== "overview"}
+        >
           <div>
             <p className="kicker">Ringkasan akun</p>
-            <h1>{selected ? `@${selected.username}` : "Dashboard"}</h1>
+            <h1>{selected.length ? accountTitle(selected) : "Dashboard"}</h1>
             <p className="muted">
-              {selected
-                ? `Sinkronisasi terakhir ${formatDate(selected.last_synced_at)}`
+              {selected.length
+                ? `Sinkronisasi terakhir ${formatDate(lastSynced(selected))}`
                 : "Hubungkan akun Instagram Professional untuk mulai membaca data."}
             </p>
           </div>
           <div className="header-actions">
             {accounts.length > 0 ? (
               <>
-                <label className="account-picker">
-                  <span>Akun Instagram</span>
-                  <select
-                    value={selected?.id ?? ""}
-                    onChange={(event) => setSelectedId(event.target.value)}
-                  >
-                    {accounts.map((account) => (
-                      <option value={account.id} key={account.id}>
-                        @{account.username}
-                      </option>
-                    ))}
-                  </select>
-                </label>
+                <details className="account-picker">
+                  <summary>
+                    {selected.length === 1
+                      ? `@${selected[0].username}`
+                      : `${selected.length} akun dipilih`}
+                  </summary>
+                  <div>
+                    {accounts.map((account) => {
+                      const checked = selected.some((a) => a.id === account.id);
+                      return (
+                        <label key={account.id}>
+                          <input
+                            type="checkbox"
+                            checked={checked}
+                            // Keep at least one account selected.
+                            disabled={checked && selected.length === 1}
+                            onChange={() =>
+                              setSelectedIds(
+                                checked
+                                  ? selected
+                                      .filter((a) => a.id !== account.id)
+                                      .map((a) => a.id)
+                                  : [...selected.map((a) => a.id), account.id],
+                              )
+                            }
+                          />
+                          @{account.username}
+                        </label>
+                      );
+                    })}
+                  </div>
+                </details>
                 <button
                   className="secondary-action"
                   onClick={syncInstagram}
@@ -574,10 +671,15 @@ function Dashboard({ user, online, installPrompt, updateWorker }) {
           <p className="limit-note">Batas lima akun telah tercapai.</p>
         ) : null}
 
-        {loading || (selected && analytics.accountId !== selected.id) ? (
+        {loading || (selectionKey && analytics.accountId !== selectionKey) ? (
           <DashboardSkeleton />
-        ) : selected ? (
-          <AnalyticsDashboard account={selected} analytics={analytics} />
+        ) : selected.length ? (
+          <AnalyticsDashboard
+            accounts={selected}
+            analytics={analytics}
+            online={online}
+            view={view}
+          />
         ) : (
           <EmptyDashboard onConnect={connectInstagram} busy={connecting} />
         )}
@@ -618,53 +720,111 @@ function EmptyDashboard({ onConnect, busy }) {
 }
 
 /** @param {{ account: InstagramAccount, analytics: AnalyticsState }} props */
-function AnalyticsDashboard({ account, analytics }) {
+const METRIC_TABS = [
+  ["followers_count", "Followers"],
+  ["reach", "Reach"],
+  ["views", "Views"],
+  ["total_interactions", "Interaksi"],
+];
+/** @type {Array<["summary" | "ask" | "captions" | "ideas", string]>} */
+const AI_MODES = [
+  ["summary", "Ringkasan 30 hari"],
+  ["captions", "Analisis caption"],
+  ["ideas", "Ide konten"],
+  ["ask", "Tanya data"],
+];
+/** @type {Record<string, string>} */
+const DIMENSION_LABELS = {
+  country: "Negara",
+  city: "Kota",
+  age: "Usia",
+  gender: "Gender",
+  engaged_country: "Negara (audiens terlibat)",
+};
+
+/** @param {number | null} change */
+function formatChange(change) {
+  if (change === null) return "belum ada pembanding";
+  const pct = Math.round(change * 100);
+  return `${pct >= 0 ? "+" : ""}${pct}% vs 7 hari sebelumnya`;
+}
+
+/** @param {{ accounts: InstagramAccount[], analytics: AnalyticsState, online: boolean, view: View }} props */
+function AnalyticsDashboard({ accounts, analytics, online, view }) {
+  const account = accounts[0];
+  const title = accountTitle(accounts);
+  const [metricKey, setMetricKey] = useState("followers_count");
+  const [dimension, setDimension] = useState("country");
   const summary = buildMetricSummary(analytics.metrics);
-  const points = buildTrendPoints(analytics.metrics, 640, 220);
+  const points = buildTrendPoints(analytics.metrics, 640, 220, metricKey);
+  const reach7 = sumWindow(analytics.metrics, "reach", 7);
+  const views7 = sumWindow(analytics.metrics, "views", 7);
+  const interactions7 = sumWindow(analytics.metrics, "total_interactions", 7);
+  const latest = analytics.metrics.at(-1) ?? {};
+  const content = summarizeContent(analytics.media);
+  const dimensions = [...new Set(analytics.audience.map((r) => r.dimension))];
+  const activeDimension = dimensions.includes(dimension)
+    ? dimension
+    : (dimensions[0] ?? "country");
+  const audience = analytics.audience
+    .filter((row) => row.dimension === activeDimension)
+    .slice(0, 8);
+  const audienceMax = Math.max(
+    ...audience.map((row) => Number(row.value) || 0),
+    1,
+  );
   const metrics = [
     [
       "Followers",
       formatMetric(summary.followers),
       summary.followerGrowth === null
-        ? null
+        ? "Perlu lebih banyak data"
         : `${summary.followerGrowth >= 0 ? "+" : ""}${numberFormat.format(summary.followerGrowth)} periode ini`,
     ],
-    ["Reach", formatMetric(summary.reach), "Snapshot terbaru"],
-    ["Interaksi", formatMetric(summary.interactions), "Snapshot terbaru"],
+    ["Reach 7 hari", formatMetric(reach7.current), formatChange(reach7.change)],
+    ["Views 7 hari", formatMetric(views7.current), formatChange(views7.change)],
     [
-      "Akun terlibat",
-      formatMetric(summary.accountsEngaged),
-      "Snapshot terbaru",
+      "Interaksi 7 hari",
+      formatMetric(interactions7.current),
+      formatChange(interactions7.change),
     ],
   ];
-  const audience = analytics.audience.slice(0, 8);
-  const audienceMax = Math.max(
-    ...audience.map((row) => Number(row.value) || 0),
-    1,
-  );
+  const daily = [
+    ["Follows", latest.follows],
+    ["Unfollows", latest.unfollows],
+    ["Likes", latest.likes],
+    ["Komentar", latest.comments],
+    ["Disimpan", latest.saves],
+    ["Dibagikan", latest.shares],
+    ["Balasan story", latest.replies],
+    ["Tap link profil", latest.profile_links_taps],
+    ["Akun terlibat", latest.accounts_engaged],
+  ];
 
-  return (
-    <>
-      <section className="metrics" aria-label="Metrik utama">
-        {metrics.map(([label, value, note]) => (
-          <article key={label}>
-            <span>{label}</span>
-            <strong>{value}</strong>
-            <small>{note ?? "Perlu lebih banyak data"}</small>
-          </article>
-        ))}
-      </section>
-
+  if (view === "trend")
+    return (
       <section className="dashboard-grid" id="trend">
         <article className="panel trend-panel">
           <div className="section-heading">
             <div>
-              <p className="section-index">90 hari terakhir</p>
-              <h2>Pertumbuhan followers</h2>
+              <p className="section-index">
+                {analytics.metrics.length} hari data
+              </p>
+              <h2>Tren harian</h2>
             </div>
-            <span className={`status ${account.status}`}>
-              {account.status.replace("_", " ")}
-            </span>
+            <div className="tabs" role="tablist" aria-label="Pilih metrik">
+              {METRIC_TABS.map(([key, label]) => (
+                <button
+                  key={key}
+                  role="tab"
+                  aria-selected={metricKey === key}
+                  className={metricKey === key ? "tab active" : "tab"}
+                  onClick={() => setMetricKey(key)}
+                >
+                  {label}
+                </button>
+              ))}
+            </div>
           </div>
           {points ? (
             <div className="chart-wrap">
@@ -672,145 +832,305 @@ function AnalyticsDashboard({ account, analytics }) {
                 className="trend-chart"
                 viewBox="0 0 640 220"
                 role="img"
-                aria-label={`Grafik followers @${account.username}`}
+                aria-label={`Grafik ${metricKey} ${title}`}
               >
                 <line x1="0" y1="219" x2="640" y2="219" />
                 <polyline points={points} />
               </svg>
               <details>
                 <summary>Lihat data tabel</summary>
-                <table>
-                  <thead>
-                    <tr>
-                      <th>Tanggal</th>
-                      <th>Followers</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {analytics.metrics.map((row) => (
-                      <tr key={row.metric_date}>
-                        <td>{formatDate(row.metric_date)}</td>
-                        <td>{formatMetric(row.followers_count)}</td>
+                <div className="table-scroll">
+                  <table>
+                    <thead>
+                      <tr>
+                        <th>Tanggal</th>
+                        <th>Followers</th>
+                        <th>Reach</th>
+                        <th>Views</th>
+                        <th>Interaksi</th>
                       </tr>
-                    ))}
-                  </tbody>
-                </table>
+                    </thead>
+                    <tbody>
+                      {[...analytics.metrics].reverse().map((row) => (
+                        <tr key={row.metric_date}>
+                          <td>{formatDate(row.metric_date)}</td>
+                          <td>{formatMetric(row.followers_count)}</td>
+                          <td>{formatMetric(row.reach)}</td>
+                          <td>{formatMetric(row.views)}</td>
+                          <td>{formatMetric(row.total_interactions)}</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
               </details>
             </div>
           ) : (
-            <PanelEmpty text="Grafik muncul setelah minimal dua sinkronisasi." />
+            <PanelEmpty text="Metrik ini belum punya dua titik data. Instagram hanya menyediakan histori reach; metrik lain terisi harian mulai sekarang." />
           )}
         </article>
 
         <article className="panel account-panel">
-          <p className="section-index">Akun aktif</p>
-          <div className="profile-row">
-            {account.profile_picture_url ? (
-              <img src={account.profile_picture_url} alt="" />
-            ) : (
-              <span className="avatar" aria-hidden="true">
-                {account.username.slice(0, 2).toUpperCase()}
-              </span>
-            )}
-            <div>
-              <h2>@{account.username}</h2>
-              <p>{account.name || account.account_type}</p>
-            </div>
-          </div>
-          <dl>
-            <div>
-              <dt>Jenis akun</dt>
-              <dd>{account.account_type.replace("MEDIA_", "")}</dd>
-            </div>
+          <p className="section-index">Hari terakhir</p>
+          <h2>{title}</h2>
+          <dl className="daily-grid">
+            {daily.map(([label, value]) => (
+              <div key={label}>
+                <dt>{label}</dt>
+                <dd>{formatMetric(value)}</dd>
+              </div>
+            ))}
             <div>
               <dt>Sinkronisasi</dt>
-              <dd>{formatDate(account.last_synced_at)}</dd>
-            </div>
-            <div>
-              <dt>Status</dt>
-              <dd>{account.status.replace("_", " ")}</dd>
+              <dd>{formatDate(lastSynced(accounts))}</dd>
             </div>
           </dl>
         </article>
       </section>
-
-      <section className="dashboard-grid lower-grid">
+    );
+  if (view === "content")
+    return (
+      <section className="dashboard-grid lower-grid" id="content">
         <article className="panel content-panel" id="content">
           <div className="section-heading">
             <div>
               <p className="section-index">Konten</p>
-              <h2>Performa terbaru</h2>
+              <h2>Format & jam tayang</h2>
             </div>
           </div>
-          {analytics.media.length ? (
-            <div className="table-scroll">
-              <table>
-                <thead>
-                  <tr>
-                    <th>Konten</th>
-                    <th>Reach</th>
-                    <th>Interaksi</th>
-                    <th>Disimpan</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {analytics.media.map((item) => (
-                    <tr key={item.id}>
-                      <td>
-                        <a
-                          href={item.permalink || undefined}
-                          target="_blank"
-                          rel="noreferrer"
-                        >
-                          {item.caption?.trim() || item.media_type}
-                        </a>
-                        <small>{formatDate(item.published_at)}</small>
-                      </td>
-                      <td>{formatMetric(item.reach)}</td>
-                      <td>{formatMetric(item.total_interactions)}</td>
-                      <td>{formatMetric(item.saved)}</td>
+          {content.byFormat.length ? (
+            <>
+              <div className="table-scroll">
+                <table>
+                  <thead>
+                    <tr>
+                      <th>Format</th>
+                      <th>Jumlah</th>
+                      <th>Rata-rata reach</th>
+                      <th>Rata-rata interaksi</th>
                     </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
+                  </thead>
+                  <tbody>
+                    {content.byFormat.map((row) => (
+                      <tr key={row.format}>
+                        <td>{row.format}</td>
+                        <td>{row.count}</td>
+                        <td>{formatMetric(row.avgReach)}</td>
+                        <td>{formatMetric(row.avgInteractions)}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+              {content.bestHours.length ? (
+                <p className="hint">
+                  Jam tayang dengan reach rata-rata tertinggi (WIB):{" "}
+                  {content.bestHours
+                    .map(
+                      (h) =>
+                        `${String(h.hour).padStart(2, "0")}:00 (${h.count} konten, reach ${formatMetric(h.avgReach)})`,
+                    )
+                    .join(" · ")}
+                  . Dihitung dari konten Anda sendiri, bukan estimasi.
+                </p>
+              ) : null}
+              <details>
+                <summary>Semua konten ({analytics.media.length})</summary>
+                <div className="table-scroll">
+                  <table>
+                    <thead>
+                      <tr>
+                        <th>Konten</th>
+                        <th>Format</th>
+                        <th>Reach</th>
+                        <th>Views</th>
+                        <th>Interaksi</th>
+                        <th>Disimpan</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {analytics.media.map((item) => (
+                        <tr key={item.id}>
+                          <td>
+                            <a
+                              href={item.permalink || undefined}
+                              target="_blank"
+                              rel="noreferrer"
+                            >
+                              {item.caption?.trim().slice(0, 80) ||
+                                item.media_type}
+                            </a>
+                            <small>{formatDate(item.published_at)}</small>
+                          </td>
+                          <td>{item.media_product_type ?? item.media_type}</td>
+                          <td>{formatMetric(item.reach)}</td>
+                          <td>{formatMetric(item.views)}</td>
+                          <td>{formatMetric(item.total_interactions)}</td>
+                          <td>{formatMetric(item.saved)}</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              </details>
+            </>
           ) : (
             <PanelEmpty text="Konten akan muncul setelah sinkronisasi pertama." />
           )}
         </article>
-
-        <article className="panel audience-panel" id="audience">
-          <div className="section-heading">
-            <div>
-              <p className="section-index">Audiens</p>
-              <h2>Demografi utama</h2>
-            </div>
-          </div>
-          {audience.length ? (
-            <ol className="audience-list">
-              {audience.map((row) => (
-                <li key={`${row.dimension}-${row.label}`}>
-                  <div>
-                    <span>{row.label}</span>
-                    <strong>{formatMetric(row.value)}</strong>
-                  </div>
-                  <span
-                    className="audience-bar"
-                    style={
-                      /** @type {import("react").CSSProperties} */ ({
-                        "--bar-width": `${(Number(row.value) / audienceMax) * 100}%`,
-                      })
-                    }
-                  />
-                </li>
-              ))}
-            </ol>
-          ) : (
-            <PanelEmpty text="Demografi tersedia setelah Instagram mengembalikan data agregat." />
-          )}
-        </article>
       </section>
+    );
+  if (view === "audience")
+    return (
+      <>
+        <section className="dashboard-grid lower-grid" id="audience">
+          <article className="panel audience-panel" id="audience">
+            <div className="section-heading">
+              <div>
+                <p className="section-index">Audiens</p>
+                <h2>Demografi</h2>
+              </div>
+            </div>
+            {dimensions.length ? (
+              <>
+                <div className="tabs" role="tablist" aria-label="Pilih dimensi">
+                  {dimensions.map((dim) => (
+                    <button
+                      key={dim}
+                      role="tab"
+                      aria-selected={activeDimension === dim}
+                      className={activeDimension === dim ? "tab active" : "tab"}
+                      onClick={() => setDimension(dim)}
+                    >
+                      {DIMENSION_LABELS[dim] ?? dim}
+                    </button>
+                  ))}
+                </div>
+                <ol className="audience-list">
+                  {audience.map((row) => (
+                    <li key={`${row.dimension}-${row.label}`}>
+                      <div>
+                        <span>{row.label}</span>
+                        <strong>{formatMetric(row.value)}</strong>
+                      </div>
+                      <span
+                        className="audience-bar"
+                        style={
+                          /** @type {import("react").CSSProperties} */ ({
+                            "--bar-width": `${(Number(row.value) / audienceMax) * 100}%`,
+                          })
+                        }
+                      />
+                    </li>
+                  ))}
+                </ol>
+              </>
+            ) : (
+              <PanelEmpty text="Demografi tersedia setelah akun punya minimal 100 followers dan Instagram mengembalikan data agregat." />
+            )}
+          </article>
+        </section>
+        <AiPanel
+          account={account}
+          merged={accounts.length > 1}
+          online={online}
+        />
+      </>
+    );
+  return (
+    <>
+      <section className="metrics" aria-label="Metrik utama">
+        {metrics.map(([label, value, note]) => (
+          <article key={label}>
+            <span>{label}</span>
+            <strong>{value}</strong>
+            <small>{note}</small>
+          </article>
+        ))}
+      </section>
+      <AiPanel account={account} merged={accounts.length > 1} online={online} />
     </>
+  );
+}
+
+/** @param {{ account: InstagramAccount, merged: boolean, online: boolean }} props */
+function AiPanel({ account, merged, online }) {
+  const accountId = account.id;
+  const [mode, setMode] = useState(
+    /** @type {"summary" | "ask" | "captions" | "ideas"} */ ("summary"),
+  );
+  const [question, setQuestion] = useState("");
+  const [answer, setAnswer] = useState("");
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState("");
+
+  async function run() {
+    setBusy(true);
+    setError("");
+    try {
+      setAnswer(await requestAiInsight(supabase, accountId, mode, question));
+    } catch (reason) {
+      setError(reason instanceof Error ? reason.message : "Analisis AI gagal");
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  return (
+    <section className="panel ai-panel" id="ai" aria-labelledby="ai-title">
+      <div className="section-heading">
+        <div>
+          <p className="section-index">AI</p>
+          <h2 id="ai-title">Analisis berbasis data Anda</h2>
+        </div>
+        <div className="tabs" role="tablist" aria-label="Mode AI">
+          {AI_MODES.map(([key, label]) => (
+            <button
+              key={key}
+              role="tab"
+              aria-selected={mode === key}
+              className={mode === key ? "tab active" : "tab"}
+              onClick={() => setMode(key)}
+            >
+              {label}
+            </button>
+          ))}
+        </div>
+      </div>
+      <div className="ai-controls">
+        {mode === "ask" ? (
+          <input
+            type="text"
+            value={question}
+            onChange={(event) => setQuestion(event.target.value)}
+            placeholder="Contoh: kenapa reach minggu ini turun?"
+            aria-label="Pertanyaan"
+            maxLength={500}
+          />
+        ) : null}
+        <button
+          className="primary"
+          onClick={run}
+          disabled={!online || busy || (mode === "ask" && !question.trim())}
+        >
+          {busy ? "Menganalisis…" : "Jalankan"}
+        </button>
+      </div>
+      {error ? (
+        <p className="form-message" role="alert">
+          {error}
+        </p>
+      ) : null}
+      {answer ? (
+        <pre className="ai-answer">{answer}</pre>
+      ) : (
+        <p className="hint">
+          {merged
+            ? `AI menganalisis satu akun: @${account.username}. Data gabungan tidak dikirim ke AI.`
+            : "AI hanya membaca angka yang tersimpan dari Instagram API. Ia tidak menebak metrik yang tidak tersedia."}
+        </p>
+      )}
+    </section>
   );
 }
 

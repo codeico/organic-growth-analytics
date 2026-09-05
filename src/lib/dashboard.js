@@ -2,15 +2,15 @@
 const number = (value) => (typeof value === "number" ? value : null);
 
 /**
+ * Keep only selections that still exist; fall back to the first account.
  * @template {{ id: string }} T
  * @param {T[]} accounts
- * @param {string | null} selectedId
- * @returns {T | null}
+ * @param {string[]} selectedIds
+ * @returns {T[]}
  */
-export function pickAccount(accounts, selectedId) {
-  return (
-    accounts.find((account) => account.id === selectedId) ?? accounts[0] ?? null
-  );
+export function pickAccounts(accounts, selectedIds) {
+  const kept = accounts.filter((account) => selectedIds.includes(account.id));
+  return kept.length ? kept : accounts.slice(0, 1);
 }
 
 /** @param {Array<Record<string, unknown>>} rows */
@@ -39,10 +39,11 @@ export function buildMetricSummary(rows) {
  * @param {Array<Record<string, unknown>>} rows
  * @param {number} width
  * @param {number} height
+ * @param {string} key
  */
-export function buildTrendPoints(rows, width, height) {
+export function buildTrendPoints(rows, width, height, key = "followers_count") {
   const values = rows
-    .map((row) => number(row.followers_count))
+    .map((row) => number(row[key]))
     .filter((value) => value !== null);
   if (values.length < 2) return "";
   const min = Math.min(...values);
@@ -55,6 +56,129 @@ export function buildTrendPoints(rows, width, height) {
       return `${Math.round(x)},${Math.round(y)}`;
     })
     .join(" ");
+}
+
+/** @typedef {Record<string, unknown>} Row */
+
+/**
+ * Sum of numeric `key` over `rows`; null when no numeric value exists.
+ * @param {Row[]} rows
+ * @param {string} key
+ */
+function sumOf(rows, key) {
+  /** @type {number[]} */
+  const values = [];
+  for (const row of rows) {
+    const value = number(row[key]);
+    if (value !== null) values.push(value);
+  }
+  return values.length ? values.reduce((a, b) => a + b, 0) : null;
+}
+
+/**
+ * Sum of the last `days` rows vs the `days` before them. Null when no data.
+ * @param {Row[]} rows sorted ascending by metric_date
+ * @param {string} key
+ * @param {number} days
+ */
+export function sumWindow(rows, key, days) {
+  const current = sumOf(rows.slice(-days), key);
+  const previous = sumOf(rows.slice(-days * 2, -days), key);
+  const change =
+    current === null || previous === null || previous === 0
+      ? null
+      : (current - previous) / previous;
+  return { current, previous, change };
+}
+
+const WIB_OFFSET_HOURS = 7;
+
+/**
+ * @param {Row[]} items
+ * @param {string} key
+ */
+function avgOf(items, key) {
+  const total = sumOf(items, key);
+  if (total === null) return null;
+  const count = items.filter((m) => number(m[key]) !== null).length;
+  return Math.round(total / count);
+}
+
+/**
+ * @template K
+ * @param {Row[]} items
+ * @param {(item: Row) => K | null} keyOf
+ * @returns {Map<K, Row[]>}
+ */
+function groupBy(items, keyOf) {
+  /** @type {Map<K, Row[]>} */
+  const map = new Map();
+  for (const item of items) {
+    const k = keyOf(item);
+    if (k === null) continue;
+    map.set(k, [...(map.get(k) ?? []), item]);
+  }
+  return map;
+}
+
+/**
+ * Real-post comparison by format and by publishing hour (WIB).
+ * @param {Row[]} media
+ */
+export function summarizeContent(media) {
+  const byFormat = [
+    ...groupBy(media, (m) =>
+      String(m.media_product_type ?? m.media_type ?? "LAINNYA"),
+    ),
+  ]
+    .map(([format, items]) => ({
+      format,
+      count: items.length,
+      avgReach: avgOf(items, "reach"),
+      avgInteractions: avgOf(items, "total_interactions"),
+    }))
+    .sort((a, b) => (b.avgReach ?? -1) - (a.avgReach ?? -1));
+
+  const bestHours = [
+    ...groupBy(media, (m) => {
+      const at = new Date(String(m.published_at));
+      return Number.isNaN(at.getTime())
+        ? null
+        : (at.getUTCHours() + WIB_OFFSET_HOURS) % 24;
+    }),
+  ]
+    .map(([hour, items]) => ({
+      hour,
+      count: items.length,
+      avgReach: avgOf(items, "reach"),
+    }))
+    .filter(
+      /** @returns {h is { hour: number, count: number, avgReach: number }} */
+      (h) => h.avgReach !== null,
+    )
+    .sort((a, b) => b.avgReach - a.avgReach || b.count - a.count)
+    .slice(0, 5);
+
+  return { byFormat, bestHours };
+}
+
+/**
+ * @param {import("@supabase/supabase-js").SupabaseClient} client
+ * @param {string} accountId
+ * @param {"summary" | "ask" | "captions" | "ideas"} mode
+ * @param {string} question
+ * @returns {Promise<string>}
+ */
+export async function requestAiInsight(client, accountId, mode, question) {
+  const { data, error } = await client.functions.invoke("ai-insights", {
+    body: { account_id: accountId, mode, question },
+  });
+  if (error) {
+    const body = await error.context?.json?.().catch(() => null);
+    throw new Error(body?.error ?? "Analisis AI gagal");
+  }
+  if (typeof data?.answer !== "string") throw new Error("Analisis AI kosong");
+  return data.answer;
 }
 
 /** @param {import("@supabase/supabase-js").SupabaseClient} client */
@@ -94,43 +218,118 @@ export async function listInstagramAccounts(client) {
 }
 
 /**
- * @param {import("@supabase/supabase-js").SupabaseClient} client
- * @param {string} accountId
+ * Group `rows` by `keyOf` and sum every numeric field except the key fields.
+ * Non-numeric fields keep the first value seen.
+ * @param {Row[]} rows
+ * @param {string[]} keys
  */
-export async function loadAccountAnalytics(client, accountId) {
-  const [metrics, media, audience] = await Promise.all([
+function sumBy(rows, keys) {
+  /** @type {Map<string, Row>} */
+  const out = new Map();
+  for (const row of rows) {
+    const id = keys.map((k) => String(row[k])).join("|");
+    const acc = out.get(id) ?? Object.fromEntries(keys.map((k) => [k, row[k]]));
+    for (const [field, value] of Object.entries(row)) {
+      if (keys.includes(field) || field === "account_id" || field === "id")
+        continue;
+      const n = number(value);
+      if (n === null) {
+        acc[field] ??= value;
+        continue;
+      }
+      const prev = number(acc[field]);
+      acc[field] = prev === null ? n : prev + n;
+    }
+    out.set(id, acc);
+  }
+  return [...out.values()];
+}
+
+/**
+ * Combine per-account analytics into one view. Daily metrics, audience
+ * labels, and breakdowns are summed; media is pooled. Averages are never
+ * summed here because callers recompute them from the merged rows.
+ * @param {Array<{ metrics: Row[], media: Row[], audience: Row[], breakdowns: Row[] }>} parts
+ */
+export function mergeAnalytics(parts) {
+  if (parts.length === 1) return parts[0];
+  /** @param {Row} a @param {Row} b */
+  const byDate = (a, b) =>
+    String(a.metric_date).localeCompare(String(b.metric_date));
+  const audience = sumBy(
+    parts.flatMap((p) =>
+      p.audience.map(({ snapshot_date, ...r }) => (void snapshot_date, r)),
+    ),
+    ["dimension", "label"],
+  ).sort((a, b) => (number(b.value) ?? 0) - (number(a.value) ?? 0));
+  return {
+    metrics: sumBy(
+      parts.flatMap((p) => p.metrics),
+      ["metric_date"],
+    ).sort(byDate),
+    media: parts
+      .flatMap((p) => p.media)
+      .sort((a, b) =>
+        String(b.published_at).localeCompare(String(a.published_at)),
+      ),
+    audience,
+    breakdowns: sumBy(
+      parts.flatMap((p) => p.breakdowns),
+      ["metric_date", "metric", "product_type"],
+    ).sort((a, b) => byDate(b, a)),
+  };
+}
+
+/**
+ * @param {import("@supabase/supabase-js").SupabaseClient} client
+ * @param {string[]} accountIds
+ */
+export async function loadAccountAnalytics(client, accountIds) {
+  const [metrics, media, audience, breakdowns] = await Promise.all([
     client
       .from("instagram_account_metrics")
-      .select(
-        "metric_date,followers_count,reach,total_interactions,accounts_engaged",
-      )
-      .eq("account_id", accountId)
+      .select("*")
+      .in("account_id", accountIds)
       .order("metric_date")
-      .limit(90),
+      .limit(90 * accountIds.length),
     client
       .from("instagram_media")
-      .select(
-        "id,caption,media_type,thumbnail_url,permalink,published_at,reach,likes,comments,saved,shares,total_interactions",
-      )
-      .eq("account_id", accountId)
+      .select("*")
+      .in("account_id", accountIds)
       .order("published_at", { ascending: false })
-      .limit(12),
+      .limit(50 * accountIds.length),
     client
       .from("instagram_audience_demographics")
-      .select("snapshot_date,dimension,label,value")
-      .eq("account_id", accountId)
+      .select("account_id,snapshot_date,dimension,label,value")
+      .in("account_id", accountIds)
       .order("snapshot_date", { ascending: false })
       .order("value", { ascending: false })
-      .limit(100),
+      .limit(300 * accountIds.length),
+    client
+      .from("instagram_metric_breakdowns")
+      .select("account_id,metric_date,metric,product_type,value")
+      .in("account_id", accountIds)
+      .order("metric_date", { ascending: false })
+      .limit(60 * accountIds.length),
   ]);
 
-  for (const result of [metrics, media, audience]) {
+  for (const result of [metrics, media, audience, breakdowns]) {
     if (result.error) throw result.error;
   }
 
-  return {
-    metrics: metrics.data ?? [],
-    media: media.data ?? [],
-    audience: audience.data ?? [],
-  };
+  return mergeAnalytics(
+    accountIds.map((id) => {
+      const own = (/** @type {Row[] | null} */ rows) =>
+        (rows ?? []).filter((r) => r.account_id === id);
+      const aud = own(audience.data);
+      // Only the latest demographic snapshot per account is meaningful.
+      const latest = aud[0]?.snapshot_date;
+      return {
+        metrics: own(metrics.data),
+        media: own(media.data),
+        audience: aud.filter((r) => r.snapshot_date === latest),
+        breakdowns: own(breakdowns.data),
+      };
+    }),
+  );
 }

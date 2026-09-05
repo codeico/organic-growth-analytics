@@ -23,7 +23,7 @@ describe("offline dashboard snapshot", () => {
     const cacheStorage = fakeCaches();
     const snapshot = {
       accounts: [{ id: "account-a", username: "creator" }],
-      selectedId: "account-a",
+      selectedIds: ["account-a"],
       analytics: {
         accountId: "account-a",
         metrics: [],
@@ -46,7 +46,7 @@ describe("offline dashboard snapshot", () => {
     const cacheStorage = fakeCaches();
     await saveDashboardSnapshot(cacheStorage, "user-a", {
       accounts: [],
-      selectedId: null,
+      selectedIds: [],
       analytics: { accountId: null, metrics: [], media: [], audience: [] },
     });
 

@@ -101,8 +101,30 @@ Deno.serve(async (request) => {
 
       const { error: metricError } = await admin
         .from("instagram_account_metrics")
-        .upsert({ account_id: account.id, ...snapshot.metric });
+        .upsert(
+          // Backfilled days carry only time-series metrics; today's row carries
+          // everything. Upsert per day so older rows are filled, not clobbered.
+          snapshot.dailyMetrics.map((row) =>
+            row.metric_date === snapshot.metric.metric_date
+              ? { account_id: account.id, ...snapshot.metric }
+              : { account_id: account.id, ...row },
+          ),
+          { onConflict: "account_id,metric_date" },
+        );
       if (metricError) throw metricError;
+
+      if (snapshot.breakdowns.length) {
+        const { error: breakdownError } = await admin
+          .from("instagram_metric_breakdowns")
+          .upsert(
+            snapshot.breakdowns.map((row) => ({
+              account_id: account.id,
+              ...row,
+            })),
+            { onConflict: "account_id,metric_date,metric,product_type" },
+          );
+        if (breakdownError) throw breakdownError;
+      }
 
       if (snapshot.media.length) {
         const { error: mediaError } = await admin
@@ -134,7 +156,13 @@ Deno.serve(async (request) => {
       if (run)
         await admin
           .from("instagram_sync_runs")
-          .update({ status: "succeeded", finished_at: now })
+          .update({
+            status: "succeeded",
+            finished_at: now,
+            error_message: snapshot.warnings.length
+              ? snapshot.warnings.join(" | ").slice(0, 500)
+              : null,
+          })
           .eq("id", run.id);
       results.push({ account_id: account.id, status: "succeeded" });
     } catch (reason) {

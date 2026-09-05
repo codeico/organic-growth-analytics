@@ -402,6 +402,11 @@ enabled = true
 verify_jwt = false
 entrypoint = "./functions/instagram-sync/index.ts"
 
+[functions.ai-insights]
+enabled = true
+verify_jwt = true
+entrypoint = "./functions/ai-insights/index.ts"
+
 [analytics]
 enabled = true
 port = 54327

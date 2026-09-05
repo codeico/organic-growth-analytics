@@ -83,6 +83,37 @@ function metricValues(rows) {
   );
 }
 
+/**
+ * Flattens `total_value.breakdowns[].results[]` into `{ label, value }` pairs.
+ * @param {Record<string, any> | undefined} metric
+ */
+function breakdownRows(metric) {
+  const rows = [];
+  for (const breakdown of metric?.total_value?.breakdowns ?? []) {
+    for (const result of breakdown.results ?? []) {
+      rows.push({
+        label: String(result.dimension_values?.at(-1) ?? "Unknown"),
+        value: Number(result.value ?? 0),
+      });
+    }
+  }
+  return rows;
+}
+
+/** @param {PromiseSettledResult<any>} result */
+const dataOf = (result) =>
+  result.status === "fulfilled" ? (result.value.data ?? []) : [];
+
+// Interaction metrics that support `period=day` + `total_value`.
+const DAILY_TOTALS =
+  "views,accounts_engaged,total_interactions,likes,comments,saves,shares,replies,profile_links_taps";
+// Only reach supports `time_series` in practice (views returns [] despite docs),
+// which is what makes the 30-day backfill possible.
+const TIME_SERIES = "reach";
+const SURFACE_METRICS =
+  "reach,views,total_interactions,likes,comments,saves,shares";
+const DEMOGRAPHIC_DIMENSIONS = ["country", "city", "age", "gender"];
+
 /** @param {typeof fetch} fetcher @param {string} token @param {Date} now */
 export async function fetchInstagramSnapshot(fetcher, token, now = new Date()) {
   const access = { access_token: token };
@@ -94,40 +125,118 @@ export async function fetchInstagramSnapshot(fetcher, token, now = new Date()) {
   const today = now.toISOString().slice(0, 10);
   const since = String(Math.floor((now.getTime() - 29 * 86_400_000) / 1000));
   const until = String(Math.floor(now.getTime() / 1000));
+  const daySince = String(Math.floor((now.getTime() - 86_400_000) / 1000));
+  const day = { ...access, period: "day", since: daySince, until };
+  const demographic = (metric, breakdown) =>
+    graph(fetcher, "/me/insights", {
+      ...access,
+      metric,
+      period: "lifetime",
+      timeframe: "this_month",
+      metric_type: "total_value",
+      breakdown,
+    });
 
-  const [accountResult, mediaResult, audienceResult] = await Promise.allSettled(
-    [
-      graph(fetcher, "/me/insights", {
-        ...access,
-        metric: "reach,accounts_engaged,total_interactions",
-        period: "day",
-        metric_type: "total_value",
-        since,
-        until,
-      }),
-      graph(fetcher, "/me/media", {
-        ...access,
-        fields:
-          "id,caption,media_type,thumbnail_url,permalink,timestamp,like_count,comments_count",
-        limit: "25",
-      }),
-      graph(fetcher, "/me/insights", {
-        ...access,
-        metric: "follower_demographics",
-        period: "lifetime",
-        timeframe: "this_month",
-        metric_type: "total_value",
-        breakdown: "country",
-      }),
-    ],
+  const requests = [
+    graph(fetcher, "/me/insights", {
+      ...access,
+      metric: TIME_SERIES,
+      period: "day",
+      metric_type: "time_series",
+      since,
+      until,
+    }),
+    graph(fetcher, "/me/insights", {
+      ...day,
+      metric: DAILY_TOTALS,
+      metric_type: "total_value",
+    }),
+    graph(fetcher, "/me/insights", {
+      ...day,
+      metric: "follows_and_unfollows",
+      metric_type: "total_value",
+      breakdown: "follow_type",
+    }),
+    graph(fetcher, "/me/insights", {
+      ...day,
+      metric: SURFACE_METRICS,
+      metric_type: "total_value",
+      breakdown: "media_product_type",
+    }),
+    graph(fetcher, "/me/media", {
+      ...access,
+      fields:
+        "id,caption,media_type,media_product_type,thumbnail_url,permalink,timestamp,like_count,comments_count",
+      limit: "50",
+    }),
+    demographic("engaged_audience_demographics", "country"),
+    ...DEMOGRAPHIC_DIMENSIONS.map((dimension) =>
+      demographic("follower_demographics", dimension),
+    ),
+  ];
+  const settled = await Promise.allSettled(requests);
+  const [
+    seriesResult,
+    totalsResult,
+    followsResult,
+    surfaceResult,
+    mediaResult,
+    engagedResult,
+    ...followerDemographics
+  ] = settled;
+  const requestNames = [
+    "time_series",
+    "daily_totals",
+    "follows",
+    "surface",
+    "media",
+    "engaged_demographics",
+    ...DEMOGRAPHIC_DIMENSIONS,
+  ];
+  // Partial failures are tolerated but must be visible, not silent.
+  const warnings = settled.flatMap((result, index) =>
+    result.status === "rejected"
+      ? [`${requestNames[index]}: ${result.reason?.message ?? result.reason}`]
+      : [],
   );
 
-  const accountMetrics =
-    accountResult.status === "fulfilled"
-      ? metricValues(accountResult.value.data ?? [])
-      : {};
-  const rawMedia =
-    mediaResult.status === "fulfilled" ? (mediaResult.value.data ?? []) : [];
+  // 30-day daily rows keyed by date, from time_series.
+  /** @type {Map<string, Record<string, any>>} */
+  const daily = new Map();
+  for (const metric of dataOf(seriesResult)) {
+    for (const point of metric.values ?? []) {
+      const date = String(point.end_time ?? "").slice(0, 10);
+      if (!date) continue;
+      const row = daily.get(date) ?? { metric_date: date };
+      row[metric.name] = Number(point.value ?? 0);
+      daily.set(date, row);
+    }
+  }
+  const todayRow = daily.get(today) ?? { metric_date: today };
+  todayRow.followers_count = profile.followers_count ?? null;
+  daily.set(today, todayRow);
+  const dailyMetrics = [...daily.values()].sort((a, b) =>
+    a.metric_date.localeCompare(b.metric_date),
+  );
+
+  const totals = metricValues(dataOf(totalsResult));
+  const follows = Object.fromEntries(
+    breakdownRows(dataOf(followsResult)[0]).map((r) => [r.label, r.value]),
+  );
+
+  const breakdowns = [];
+  for (const metric of dataOf(surfaceResult)) {
+    for (const row of breakdownRows(metric)) {
+      breakdowns.push({
+        metric_date: today,
+        metric: metric.name,
+        product_type: row.label,
+        value: row.value,
+      });
+    }
+  }
+
+  const rawMedia = dataOf(mediaResult);
   const media = await Promise.all(
     rawMedia.map(async (item) => {
       let insights = {};
@@ -136,7 +245,7 @@ export async function fetchInstagramSnapshot(fetcher, token, now = new Date()) {
           (
             await graph(fetcher, `/${item.id}/insights`, {
               ...access,
-              metric: "reach,saved,shares,total_interactions",
+              metric: "reach,views,saved,shares,total_interactions",
             })
           ).data ?? [],
         );
@@ -147,12 +256,14 @@ export async function fetchInstagramSnapshot(fetcher, token, now = new Date()) {
         instagram_media_id: String(item.id),
         caption: item.caption ?? null,
         media_type: item.media_type,
+        media_product_type: item.media_product_type ?? null,
         thumbnail_url: item.thumbnail_url ?? null,
         permalink: item.permalink ?? null,
         published_at: item.timestamp,
         likes: item.like_count ?? null,
         comments: item.comments_count ?? null,
         reach: insights.reach ?? null,
+        views: insights.views ?? null,
         saved: insights.saved ?? null,
         shares: insights.shares ?? null,
         total_interactions: insights.total_interactions ?? null,
@@ -161,19 +272,21 @@ export async function fetchInstagramSnapshot(fetcher, token, now = new Date()) {
   );
 
   const audience = [];
-  if (audienceResult.status === "fulfilled") {
-    for (const metric of audienceResult.value.data ?? []) {
-      for (const breakdown of metric.total_value?.breakdowns ?? []) {
-        for (const result of breakdown.results ?? []) {
-          audience.push({
-            snapshot_date: today,
-            dimension: "country",
-            label: String(result.dimension_values?.[0] ?? "Unknown"),
-            value: Number(result.value ?? 0),
-          });
-        }
-      }
+  followerDemographics.forEach((result, index) => {
+    for (const row of breakdownRows(dataOf(result)[0])) {
+      audience.push({
+        snapshot_date: today,
+        dimension: DEMOGRAPHIC_DIMENSIONS[index],
+        ...row,
+      });
     }
+  });
+  for (const row of breakdownRows(dataOf(engagedResult)[0])) {
+    audience.push({
+      snapshot_date: today,
+      dimension: "engaged_country",
+      ...row,
+    });
   }
 
   return {
@@ -187,11 +300,23 @@ export async function fetchInstagramSnapshot(fetcher, token, now = new Date()) {
     metric: {
       metric_date: today,
       followers_count: profile.followers_count ?? null,
-      reach: accountMetrics.reach ?? null,
-      accounts_engaged: accountMetrics.accounts_engaged ?? null,
-      total_interactions: accountMetrics.total_interactions ?? null,
+      reach: todayRow.reach ?? null,
+      views: totals.views ?? null,
+      accounts_engaged: totals.accounts_engaged ?? null,
+      total_interactions: totals.total_interactions ?? null,
+      likes: totals.likes ?? null,
+      comments: totals.comments ?? null,
+      saves: totals.saves ?? null,
+      shares: totals.shares ?? null,
+      replies: totals.replies ?? null,
+      profile_links_taps: totals.profile_links_taps ?? null,
+      follows: follows.FOLLOWER ?? null,
+      unfollows: follows.NON_FOLLOWER ?? null,
     },
+    dailyMetrics,
+    breakdowns,
     media,
     audience,
+    warnings,
   };
 }

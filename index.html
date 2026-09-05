@@ -3,12 +3,22 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
-    <meta name="theme-color" content="#111827" />
-    <meta name="apple-mobile-web-app-capable" content="yes" />
     <meta
-      name="apple-mobile-web-app-status-bar-style"
-      content="black-translucent"
+      name="theme-color"
+      media="(prefers-color-scheme: light)"
+      content="#ffffff"
     />
+    <meta
+      name="theme-color"
+      media="(prefers-color-scheme: dark)"
+      content="#161c27"
+    />
+    <script>
+      document.documentElement.dataset.theme =
+        localStorage.getItem("theme") || "system";
+    </script>
+    <meta name="apple-mobile-web-app-capable" content="yes" />
+    <meta name="apple-mobile-web-app-status-bar-style" content="default" />
     <link rel="manifest" href="/manifest.webmanifest" />
     <link rel="icon" href="/icons/icon.svg" type="image/svg+xml" />
     <link rel="apple-touch-icon" href="/icons/apple-touch-icon.png" />
