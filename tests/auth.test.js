@@ -74,6 +74,19 @@ describe("sendMagicLink", () => {
     expect(onOffline).toHaveBeenCalledOnce();
   });
 
+  it("reports back online once server validation succeeds again", async () => {
+    const user = { id: "user-1", email: "creator@example.com" };
+    const getUser = vi.fn().mockResolvedValue({ data: { user }, error: null });
+    const onOffline = vi.fn();
+    const onOnline = vi.fn();
+
+    await expect(
+      getCurrentUser({ auth: { getUser } }, true, onOffline, onOnline),
+    ).resolves.toEqual(user);
+    expect(onOnline).toHaveBeenCalledOnce();
+    expect(onOffline).not.toHaveBeenCalled();
+  });
+
   it("exchanges a PKCE code from the confirmation URL", async () => {
     const exchangeCodeForSession = vi.fn().mockResolvedValue({ error: null });
 

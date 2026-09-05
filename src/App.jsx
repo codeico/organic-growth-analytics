@@ -89,10 +89,14 @@ export default function App() {
 
     async function loadUser() {
       try {
-        const user = await getCurrentUser(supabase, navigator.onLine, () =>
-          setOnline(false),
+        const user = await getCurrentUser(
+          supabase,
+          navigator.onLine,
+          () => setOnline(false),
+          () => setOnline(true),
         );
-        if (active) setState({ loading: false, user });
+        if (!active) return;
+        setState({ loading: false, user });
       } catch {
         if (active) setState({ loading: false, user: null });
       }

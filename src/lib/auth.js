@@ -31,16 +31,21 @@ export async function verifyEmailCode(supabase, email, code) {
  * @param {import("@supabase/supabase-js").SupabaseClient} supabase
  * @param {boolean} online
  * @param {() => void} onOffline
+ * @param {() => void} onOnline
  */
 export async function getCurrentUser(
   supabase,
   online = true,
   onOffline = () => {},
+  onOnline = () => {},
 ) {
   if (online) {
     try {
       const { data, error } = await supabase.auth.getUser();
       if (error) throw error;
+      // A completed server round-trip is the truth; it clears a stale
+      // "offline" set by an earlier transient fetch failure.
+      onOnline();
       return data.user;
     } catch (error) {
       const status = /** @type {{ status?: number }} */ (error)?.status;
