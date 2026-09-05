@@ -19,6 +19,7 @@ import {
   summarizeContent,
   parseInline,
   parseMarkdown,
+  summarizeMediaInteractions,
 } from "./lib/dashboard.js";
 import { supabase } from "./lib/supabase.js";
 import {
@@ -1203,6 +1204,107 @@ function AiPanel({ account, merged, online }) {
   );
 }
 
+/** @param {number} v */
+const pct = (v) => `${Math.round(v * 100)}%`;
+/** @param {{ item: Record<string, any> }} props */
+function InteractionSummary({ item }) {
+  const s = summarizeMediaInteractions(item);
+  if (!s.mixTotal && !s.funnel && !s.retention)
+    return (
+      <PanelEmpty text="Belum ada metrik interaksi untuk konten ini dari API." />
+    );
+  return (
+    <div className="interaction-summary">
+      {s.mixTotal ? (
+        <div>
+          <div className="stack-bar" aria-hidden="true">
+            {s.mix.map((m, i) =>
+              m.share ? (
+                <span
+                  key={m.label}
+                  className={`seg seg-${i}`}
+                  style={{ width: pct(m.share) }}
+                />
+              ) : null,
+            )}
+          </div>
+          <ol className="legend">
+            {s.mix.map((m, i) => (
+              <li key={m.label}>
+                <i className={`seg-${i}`} />
+                <span>{m.label}</span>
+                <strong>
+                  {formatMetric(m.value)} · {pct(m.share)}
+                </strong>
+              </li>
+            ))}
+          </ol>
+        </div>
+      ) : null}
+      {s.funnel ? (
+        <ol className="audience-list compact">
+          <li>
+            <div>
+              <span>Reach (akun unik)</span>
+              <strong>{formatMetric(s.funnel.reach)}</strong>
+            </div>
+            <span
+              className="audience-bar"
+              style={
+                /** @type {import("react").CSSProperties} */ ({
+                  "--bar-width": pct(
+                    Math.min(1, s.funnel.reach / s.funnel.views),
+                  ),
+                })
+              }
+            />
+          </li>
+          <li>
+            <div>
+              <span>Views · {s.funnel.viewsPerReach.toFixed(2)}× per akun</span>
+              <strong>{formatMetric(s.funnel.views)}</strong>
+            </div>
+            <span
+              className="audience-bar"
+              style={
+                /** @type {import("react").CSSProperties} */ ({
+                  "--bar-width": "100%",
+                })
+              }
+            />
+          </li>
+        </ol>
+      ) : null}
+      {s.retention ? (
+        <div>
+          <div className="stack-bar" aria-hidden="true">
+            <span
+              className="seg seg-0"
+              style={{ width: pct(s.retention.watched) }}
+            />
+            <span
+              className="seg seg-3"
+              style={{ width: pct(s.retention.skipped) }}
+            />
+          </div>
+          <ol className="legend">
+            <li>
+              <i className="seg-0" />
+              <span>Lanjut menonton setelah 3 detik</span>
+              <strong>{pct(s.retention.watched)}</strong>
+            </li>
+            <li>
+              <i className="seg-3" />
+              <span>Skip di 3 detik pertama</span>
+              <strong>{pct(s.retention.skipped)}</strong>
+            </li>
+          </ol>
+        </div>
+      ) : null}
+    </div>
+  );
+}
+
 /**
  * Per-content page. Only metrics the Graph API exposes for that surface are
  * shown; the rest is stated as unavailable instead of rendered as 0.
@@ -1286,6 +1388,8 @@ function ContentDetail({ item }) {
             ) : null}
           </div>
         </div>
+        <h3>Ringkasan interaksi</h3>
+        <InteractionSummary item={item} />
         <h3>Performa</h3>
         <dl className="stat-grid">
           {rows.map(([label, value, note]) => (

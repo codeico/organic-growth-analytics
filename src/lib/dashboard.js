@@ -380,3 +380,36 @@ export function parseInline(text) {
         : { bold: false, text: part },
     );
 }
+
+/**
+ * "Ringkasan interaksi" for one media row, shaped like Instagram's own insight
+ * screen but only from API fields: interaction mix as shares of the total, the
+ * funnel reach -> views, and (reels) watched vs skipped shares.
+ * @param {Row} item
+ */
+export function summarizeMediaInteractions(item) {
+  /** @param {unknown} v */
+  const num = (v) => (typeof v === "number" ? v : 0);
+  /** @type {Array<[string, number]>} */
+  const mixParts = [
+    ["Suka", num(item.likes)],
+    ["Komentar", num(item.comments)],
+    ["Disimpan", num(item.saved)],
+    ["Dibagikan", num(item.shares)],
+  ];
+  const mixTotal = mixParts.reduce((a, [, v]) => a + v, 0);
+  const mix = mixParts.map(([label, value]) => ({
+    label,
+    value,
+    share: mixTotal ? value / mixTotal : 0,
+  }));
+  const reach = num(item.reach);
+  const views = num(item.views);
+  const funnel =
+    reach && views ? { reach, views, viewsPerReach: views / reach } : null;
+  const isReel = item.media_product_type === "REELS";
+  const skip = typeof item.skip_rate === "number" ? item.skip_rate : null;
+  const retention =
+    isReel && skip !== null ? { watched: 1 - skip, skipped: skip } : null;
+  return { mix, mixTotal, funnel, retention };
+}

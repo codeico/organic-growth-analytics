@@ -8,6 +8,7 @@ import {
   mergeAnalytics,
   parseInline,
   parseMarkdown,
+  summarizeMediaInteractions,
   pickAccounts,
   sumWindow,
   summarizeContent,
@@ -281,5 +282,26 @@ describe("dashboard data", () => {
       { bold: true, text: "13.391" },
       { bold: false, text: " naik" },
     ]);
+  });
+
+  it("summarizes one media row into interaction shares, funnel and retention", () => {
+    const s = summarizeMediaInteractions({
+      media_product_type: "REELS",
+      likes: 60,
+      comments: 20,
+      saved: 15,
+      shares: 5,
+      reach: 500,
+      views: 900,
+      skip_rate: 0.42,
+    });
+    expect(s.mixTotal).toBe(100);
+    expect(s.mix.map((m) => m.share)).toEqual([0.6, 0.2, 0.15, 0.05]);
+    expect(s.funnel).toEqual({ reach: 500, views: 900, viewsPerReach: 1.8 });
+    expect(s.retention?.watched).toBeCloseTo(0.58);
+    expect(
+      summarizeMediaInteractions({ media_product_type: "FEED", likes: 1 })
+        .retention,
+    ).toBeNull();
   });
 });

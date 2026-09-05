@@ -1,4 +1,4 @@
-const CACHE = "oga-shell-v11";
+const CACHE = "oga-shell-v12";
 const SHELL = [
   "/offline.html",
   "/manifest.webmanifest",

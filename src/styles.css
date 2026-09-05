@@ -1155,3 +1155,64 @@ td small {
     height: 96px;
   }
 }
+
+.interaction-summary {
+  display: grid;
+  gap: 1.1rem;
+  padding: 0.9rem 1rem;
+  border: 1px solid var(--line);
+  border-radius: var(--r-sm);
+  background: var(--canvas);
+}
+.stack-bar {
+  display: flex;
+  height: 10px;
+  border-radius: 999px;
+  overflow: hidden;
+  background: var(--line-2);
+}
+.stack-bar .seg {
+  display: block;
+  height: 100%;
+}
+.seg-0 {
+  background: var(--accent);
+}
+.seg-1 {
+  background: color-mix(in srgb, var(--accent) 65%, var(--surface));
+}
+.seg-2 {
+  background: color-mix(in srgb, var(--accent) 40%, var(--surface));
+}
+.seg-3 {
+  background: var(--ink-2);
+}
+.legend {
+  list-style: none;
+  margin: 0.6rem 0 0;
+  padding: 0;
+  display: grid;
+  gap: 0.35rem;
+  font-size: 0.86rem;
+}
+.legend li {
+  display: grid;
+  grid-template-columns: 10px 1fr auto;
+  gap: 0.6rem;
+  align-items: center;
+}
+.legend i {
+  width: 10px;
+  height: 10px;
+  border-radius: 3px;
+}
+.legend strong {
+  font:
+    500 0.86rem "Geist Mono",
+    monospace;
+  font-variant-numeric: tabular-nums;
+}
+.audience-list.compact {
+  margin: 0;
+  gap: 0.6rem;
+}
