@@ -946,7 +946,14 @@ td small {
   .metrics article {
     padding: 0.9rem 1rem;
   }
-  /* Nav moves to a fixed bottom bar with safe-area padding. */
+  /* Nav moves to a fixed bottom bar with safe-area padding.
+     backdrop-filter on .sidebar would make it the containing block for
+     position: fixed, so the topbar loses its blur on mobile. */
+  .sidebar {
+    backdrop-filter: none;
+    -webkit-backdrop-filter: none;
+    background: var(--surface);
+  }
   .sidebar nav {
     position: fixed;
     inset: auto 0 0 0;
