@@ -12,11 +12,31 @@ export async function sendMagicLink(supabase, email, origin) {
   if (error) throw error;
 }
 
-/** @param {import("@supabase/supabase-js").SupabaseClient} supabase */
-export async function getCurrentUser(supabase) {
-  const { data, error } = await supabase.auth.getUser();
+/**
+ * @param {import("@supabase/supabase-js").SupabaseClient} supabase
+ * @param {boolean} online
+ * @param {() => void} onOffline
+ */
+export async function getCurrentUser(
+  supabase,
+  online = true,
+  onOffline = () => {},
+) {
+  if (online) {
+    try {
+      const { data, error } = await supabase.auth.getUser();
+      if (error) throw error;
+      return data.user;
+    } catch (error) {
+      const status = /** @type {{ status?: number }} */ (error)?.status;
+      if (!(error instanceof TypeError) && status !== 0) throw error;
+      onOffline();
+    }
+  }
+
+  const { data, error } = await supabase.auth.getSession();
   if (error) throw error;
-  return data.user;
+  return data.session?.user ?? null;
 }
 
 /**

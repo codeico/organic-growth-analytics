@@ -18,9 +18,14 @@ describe("Instagram OAuth Edge Functions", () => {
 
   it("exchanges codes server-side and encrypts long-lived tokens", () => {
     const source = read("instagram-callback");
+    const shared = readFileSync(
+      new URL("../supabase/functions/_shared/instagram.js", import.meta.url),
+      "utf8",
+    );
     expect(source).toContain("api.instagram.com/oauth/access_token");
     expect(source).toContain("graph.instagram.com/access_token");
-    expect(source).toContain("crypto.subtle.encrypt");
+    expect(source).toContain("encryptToken");
+    expect(shared).toContain("crypto.subtle.encrypt");
     expect(source).not.toMatch(/access_token.*redirect/i);
   });
 });

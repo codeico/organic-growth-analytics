@@ -27,6 +27,36 @@ describe("sendMagicLink", () => {
     await expect(getCurrentUser({ auth: { getUser } })).resolves.toEqual(user);
   });
 
+  it("uses the persisted session only while offline", async () => {
+    const user = { id: "user-1", email: "creator@example.com" };
+    const getSession = vi.fn().mockResolvedValue({
+      data: { session: { user } },
+      error: null,
+    });
+
+    await expect(
+      getCurrentUser({ auth: { getSession } }, false),
+    ).resolves.toEqual(user);
+  });
+
+  it("falls back to the persisted session when validation cannot reach Supabase", async () => {
+    const user = { id: "user-1", email: "creator@example.com" };
+    const getUser = vi.fn().mockResolvedValue({
+      data: { user: null },
+      error: { status: 0, message: "Failed to fetch" },
+    });
+    const getSession = vi.fn().mockResolvedValue({
+      data: { session: { user } },
+      error: null,
+    });
+
+    const onOffline = vi.fn();
+    await expect(
+      getCurrentUser({ auth: { getUser, getSession } }, true, onOffline),
+    ).resolves.toEqual(user);
+    expect(onOffline).toHaveBeenCalledOnce();
+  });
+
   it("exchanges a PKCE code from the confirmation URL", async () => {
     const exchangeCodeForSession = vi.fn().mockResolvedValue({ error: null });
 

@@ -275,7 +275,48 @@ p {
 .dashboard {
   width: min(100%, 92rem);
   margin: 0 auto;
-  padding: 2rem clamp(1rem, 3vw, 3rem) 4rem;
+  padding: 1rem clamp(1rem, 3vw, 3rem) 4rem;
+}
+.app-status {
+  min-height: 2.75rem;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+  margin-bottom: 1rem;
+  border-bottom: 1px solid var(--line);
+  color: var(--muted);
+  font:
+    500 0.72rem "Fira Code",
+    monospace;
+}
+.app-status > span::before {
+  content: "";
+  display: inline-block;
+  width: 0.5rem;
+  height: 0.5rem;
+  margin-right: 0.5rem;
+  border-radius: 50%;
+  background: var(--success);
+}
+.app-status > span.offline::before {
+  background: #b54708;
+}
+.app-status > div {
+  display: flex;
+  gap: 0.5rem;
+}
+.status-action {
+  min-height: 44px;
+  padding: 0 0.65rem;
+  border-color: var(--line);
+  background: transparent;
+  color: var(--accent);
+  font-size: 0.72rem;
+}
+.status-action:hover {
+  background: var(--accent-soft);
+  border-color: var(--accent);
 }
 .dashboard-header {
   display: flex;
@@ -583,7 +624,16 @@ td small {
 
 @media (max-width: 900px) {
   .app-shell {
-    grid-template-columns: 1fr;
+    grid-template-columns: minmax(0, 1fr);
+  }
+  .metrics {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+  .metrics article:nth-child(2) {
+    border-right: 0;
+  }
+  .metrics article:nth-child(-n + 2) {
+    border-bottom: 1px solid var(--line);
   }
   .sidebar {
     position: static;
@@ -609,6 +659,18 @@ td small {
   .lower-grid {
     grid-template-columns: 1fr;
   }
+  .dashboard-header {
+    align-items: stretch;
+    flex-direction: column;
+  }
+  .header-actions {
+    align-items: stretch;
+    flex-direction: column;
+  }
+  .account-picker select,
+  .header-actions button {
+    width: 100%;
+  }
 }
 
 @media (max-width: 720px) {
@@ -626,27 +688,6 @@ td small {
   }
   .dashboard {
     padding: 1.25rem 1rem 3rem;
-  }
-  .dashboard-header {
-    align-items: stretch;
-    flex-direction: column;
-  }
-  .header-actions {
-    align-items: stretch;
-    flex-direction: column;
-  }
-  .account-picker select,
-  .header-actions button {
-    width: 100%;
-  }
-  .metrics {
-    grid-template-columns: repeat(2, minmax(0, 1fr));
-  }
-  .metrics article:nth-child(2) {
-    border-right: 0;
-  }
-  .metrics article:nth-child(-n + 2) {
-    border-bottom: 1px solid var(--line);
   }
   .skeleton-grid {
     grid-template-columns: repeat(2, 1fr);

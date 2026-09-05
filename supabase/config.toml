@@ -394,6 +394,11 @@ enabled = true
 verify_jwt = false
 entrypoint = "./functions/instagram-callback/index.ts"
 
+[functions.instagram-sync]
+enabled = true
+verify_jwt = false
+entrypoint = "./functions/instagram-sync/index.ts"
+
 [analytics]
 enabled = true
 port = 54327

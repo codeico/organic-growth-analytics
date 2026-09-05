@@ -1,6 +1,7 @@
 import { describe, expect, it, vi } from "vitest";
 import {
   beginInstagramConnection,
+  requestInstagramSync,
   buildMetricSummary,
   buildTrendPoints,
   pickAccount,
@@ -78,5 +79,16 @@ describe("dashboard data", () => {
     await expect(
       beginInstagramConnection({ functions: { invoke } }),
     ).rejects.toThrow("Koneksi Instagram belum dikonfigurasi");
+  });
+
+  it("requests a user-scoped manual sync", async () => {
+    const invoke = vi.fn().mockResolvedValue({
+      data: { results: [{ account_id: "account-a", status: "succeeded" }] },
+      error: null,
+    });
+    await expect(
+      requestInstagramSync({ functions: { invoke } }),
+    ).resolves.toEqual([{ account_id: "account-a", status: "succeeded" }]);
+    expect(invoke).toHaveBeenCalledWith("instagram-sync");
   });
 });

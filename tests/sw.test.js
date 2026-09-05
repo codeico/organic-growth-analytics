@@ -4,15 +4,27 @@ import { readFileSync } from "node:fs";
 const sw = readFileSync(new URL("../public/sw.js", import.meta.url), "utf8");
 
 describe("service worker", () => {
-  it("only precaches public shell assets", () => {
+  it("precaches the public app shell without private data", () => {
+    expect(sw).toContain('const CACHE = "oga-shell-v4"');
+    expect(sw).toContain('"/index.html"');
     expect(sw).toContain('"/offline.html"');
-    expect(sw).not.toMatch(/dashboard|token|auth\/confirm|functions\/v1/);
+    expect(sw).not.toMatch(/token|functions\/v1/);
   });
 
-  it("does not cache API or authentication requests", () => {
-    expect(sw).toContain('event.request.mode !== "navigate"');
-    expect(sw).toContain(
-      'fetch(event.request).catch(() => caches.match("/offline.html"))',
-    );
+  it("serves the app shell and its built assets for offline navigation", () => {
+    expect(sw).toContain('caches.match("/index.html")');
+    expect(sw).toMatch(/response(?:\.clone\(\))?\.text\(\)/);
+    expect(sw).toContain("/assets/");
+    expect(sw).toContain("Promise.allSettled");
+    expect(sw).not.toContain("cache.addAll(SHELL)");
+  });
+
+  it("lets an installed update activate on request", () => {
+    expect(sw).toContain('event.data === "SKIP_WAITING"');
+  });
+
+  it("never intercepts Supabase or cross-origin requests", () => {
+    expect(sw).toContain("url.origin !== self.location.origin");
+    expect(sw).toContain('url.pathname.startsWith("/auth/confirm")');
   });
 });

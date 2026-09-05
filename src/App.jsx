@@ -3,6 +3,7 @@ import { confirmMagicLink, getCurrentUser, sendMagicLink } from "./lib/auth.js";
 import { routeForUser } from "./lib/access.js";
 import {
   beginInstagramConnection,
+  requestInstagramSync,
   buildMetricSummary,
   buildTrendPoints,
   listInstagramAccounts,
@@ -10,9 +11,15 @@ import {
   pickAccount,
 } from "./lib/dashboard.js";
 import { supabase } from "./lib/supabase.js";
+import {
+  clearDashboardSnapshot,
+  loadDashboardSnapshot,
+  saveDashboardSnapshot,
+} from "./lib/offline.js";
 
 /** @typedef {{ id: string, username: string, name?: string | null, account_type: string, profile_picture_url?: string | null, status: string, last_synced_at?: string | null, created_at: string }} InstagramAccount */
 /** @typedef {{ accountId: string | null, metrics: Array<Record<string, any>>, media: Array<Record<string, any>>, audience: Array<Record<string, any>> }} AnalyticsState */
+/** @typedef {Event & { prompt: () => Promise<void>, userChoice: Promise<{ outcome: string }> }} BeforeInstallPromptEvent */
 /** @type {AnalyticsState} */
 const emptyAnalytics = {
   accountId: null,
@@ -59,23 +66,50 @@ export default function App() {
       user: null,
     }),
   );
+  const [online, setOnline] = useState(navigator.onLine);
+  const [installPrompt, setInstallPrompt] = useState(
+    /** @type {BeforeInstallPromptEvent | null} */ (null),
+  );
+  const [updateWorker, setUpdateWorker] = useState(
+    /** @type {ServiceWorker | null} */ (null),
+  );
 
   useEffect(() => {
     let active = true;
 
     async function loadUser() {
       try {
-        const user = await getCurrentUser(supabase);
+        const user = await getCurrentUser(supabase, navigator.onLine, () =>
+          setOnline(false),
+        );
         if (active) setState({ loading: false, user });
       } catch {
         if (active) setState({ loading: false, user: null });
       }
     }
 
+    const setConnection = () => setOnline(navigator.onLine);
+    /** @param {Event} event */
+    const captureInstall = (event) => {
+      event.preventDefault();
+      setInstallPrompt(/** @type {BeforeInstallPromptEvent} */ (event));
+    };
+    /** @param {Event} event */
+    const captureUpdate = (event) =>
+      setUpdateWorker(/** @type {CustomEvent<ServiceWorker>} */ (event).detail);
+
     loadUser();
+    addEventListener("online", setConnection);
+    addEventListener("offline", setConnection);
+    addEventListener("beforeinstallprompt", captureInstall);
+    addEventListener("app-update-ready", captureUpdate);
     const { data } = supabase.auth.onAuthStateChange(() => loadUser());
     return () => {
       active = false;
+      removeEventListener("online", setConnection);
+      removeEventListener("offline", setConnection);
+      removeEventListener("beforeinstallprompt", captureInstall);
+      removeEventListener("app-update-ready", captureUpdate);
       data.subscription.unsubscribe();
     };
   }, []);
@@ -88,7 +122,14 @@ export default function App() {
 
   if (path === "/auth/confirm") return <Confirming />;
   if (path === "/dashboard" && state.user)
-    return <Dashboard user={state.user} />;
+    return (
+      <Dashboard
+        user={state.user}
+        online={online}
+        installPrompt={installPrompt}
+        updateWorker={updateWorker}
+      />
+    );
   return <Login />;
 }
 
@@ -187,8 +228,8 @@ function Confirming() {
   );
 }
 
-/** @param {{ user: import("@supabase/supabase-js").User }} props */
-function Dashboard({ user }) {
+/** @param {{ user: import("@supabase/supabase-js").User, online: boolean, installPrompt: BeforeInstallPromptEvent | null, updateWorker: ServiceWorker | null }} props */
+function Dashboard({ user, online, installPrompt, updateWorker }) {
   const [accounts, setAccounts] = useState(
     /** @type {InstagramAccount[]} */ ([]),
   );
@@ -200,36 +241,52 @@ function Dashboard({ user }) {
   );
   const [loading, setLoading] = useState(true);
   const [connecting, setConnecting] = useState(false);
+  const [syncing, setSyncing] = useState(false);
   const [error, setError] = useState("");
 
   const selected = pickAccount(accounts, selectedId);
 
   useEffect(() => {
     let active = true;
-    listInstagramAccounts(supabase)
-      .then((rows) => {
+
+    async function loadAccounts() {
+      if (!online) {
+        const snapshot = await loadDashboardSnapshot(caches, user.id);
+        if (!active) return;
+        if (snapshot) {
+          setAccounts(/** @type {InstagramAccount[]} */ (snapshot.accounts));
+          setSelectedId(/** @type {string | null} */ (snapshot.selectedId));
+          setAnalytics(/** @type {AnalyticsState} */ (snapshot.analytics));
+        }
+        setLoading(false);
+        return;
+      }
+
+      try {
+        const rows = await listInstagramAccounts(supabase);
         if (!active) return;
         setAccounts(rows);
         setSelectedId((current) => pickAccount(rows, current)?.id ?? null);
-        setLoading(false);
-      })
-      .catch((reason) => {
-        if (active) {
+      } catch (reason) {
+        if (active)
           setError(
             reason instanceof Error
               ? reason.message
               : "Gagal memuat akun Instagram.",
           );
-          setLoading(false);
-        }
-      });
+      } finally {
+        if (active) setLoading(false);
+      }
+    }
+
+    loadAccounts();
     return () => {
       active = false;
     };
-  }, []);
+  }, [online, user.id]);
 
   useEffect(() => {
-    if (!selected?.id) return;
+    if (!selected?.id || !online) return;
     let active = true;
     loadAccountAnalytics(supabase, selected.id)
       .then((data) => {
@@ -244,9 +301,68 @@ function Dashboard({ user }) {
     return () => {
       active = false;
     };
-  }, [selected?.id]);
+  }, [online, selected?.id]);
+
+  useEffect(() => {
+    if (
+      !online ||
+      !user.id ||
+      !selected?.id ||
+      analytics.accountId !== selected.id
+    )
+      return;
+    saveDashboardSnapshot(caches, user.id, {
+      accounts,
+      selectedId: selected.id,
+      analytics,
+    }).catch(() => undefined);
+  }, [accounts, analytics, online, selected?.id, user.id]);
+
+  async function installApp() {
+    if (!installPrompt) return;
+    await installPrompt.prompt();
+    await installPrompt.userChoice;
+  }
+
+  function updateApp() {
+    updateWorker?.postMessage("SKIP_WAITING");
+    navigator.serviceWorker.addEventListener(
+      "controllerchange",
+      () => location.reload(),
+      { once: true },
+    );
+  }
+
+  async function syncInstagram() {
+    if (!online || syncing) return;
+    setSyncing(true);
+    setError("");
+    try {
+      const results = await requestInstagramSync(supabase);
+      if (results.some((result) => result.status === "failed"))
+        throw new Error("Sebagian data Instagram gagal disinkronkan.");
+      if (selected?.id) {
+        const data = await loadAccountAnalytics(supabase, selected.id);
+        setAnalytics({ accountId: selected.id, ...data });
+      }
+      const rows = await listInstagramAccounts(supabase);
+      setAccounts(rows);
+    } catch (reason) {
+      setError(
+        reason instanceof Error
+          ? reason.message
+          : "Sinkronisasi Instagram gagal.",
+      );
+    } finally {
+      setSyncing(false);
+    }
+  }
 
   async function connectInstagram() {
+    if (!online) {
+      setError("Sambungkan internet untuk menghubungkan akun Instagram.");
+      return;
+    }
     setConnecting(true);
     setError("");
     try {
@@ -262,6 +378,7 @@ function Dashboard({ user }) {
   }
 
   async function logout() {
+    await clearDashboardSnapshot(caches, user.id);
     await supabase.auth.signOut();
     go("/login");
     location.reload();
@@ -298,6 +415,23 @@ function Dashboard({ user }) {
       </aside>
 
       <main id="main-content" className="dashboard">
+        <div className="app-status" role="status" aria-live="polite">
+          <span className={online ? "online" : "offline"}>
+            {online ? "Online" : "Offline - menampilkan snapshot terakhir"}
+          </span>
+          <div>
+            {installPrompt ? (
+              <button className="status-action" onClick={installApp}>
+                Instal aplikasi
+              </button>
+            ) : null}
+            {updateWorker ? (
+              <button className="status-action" onClick={updateApp}>
+                Perbarui
+              </button>
+            ) : null}
+          </div>
+        </div>
         <header className="dashboard-header" id="overview">
           <div>
             <p className="kicker">Ringkasan akun</p>
@@ -310,23 +444,32 @@ function Dashboard({ user }) {
           </div>
           <div className="header-actions">
             {accounts.length > 0 ? (
-              <label className="account-picker">
-                <span>Akun Instagram</span>
-                <select
-                  value={selected?.id ?? ""}
-                  onChange={(event) => setSelectedId(event.target.value)}
+              <>
+                <label className="account-picker">
+                  <span>Akun Instagram</span>
+                  <select
+                    value={selected?.id ?? ""}
+                    onChange={(event) => setSelectedId(event.target.value)}
+                  >
+                    {accounts.map((account) => (
+                      <option value={account.id} key={account.id}>
+                        @{account.username}
+                      </option>
+                    ))}
+                  </select>
+                </label>
+                <button
+                  className="secondary-action"
+                  onClick={syncInstagram}
+                  disabled={!online || syncing}
                 >
-                  {accounts.map((account) => (
-                    <option value={account.id} key={account.id}>
-                      @{account.username}
-                    </option>
-                  ))}
-                </select>
-              </label>
+                  {syncing ? "Menyinkronkan…" : "Sinkronkan"}
+                </button>
+              </>
             ) : null}
             <button
               onClick={connectInstagram}
-              disabled={connecting || accounts.length >= 5}
+              disabled={!online || connecting || accounts.length >= 5}
             >
               {connecting
                 ? "Menghubungkan…"

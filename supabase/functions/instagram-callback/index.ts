@@ -1,4 +1,5 @@
 import { createClient } from "npm:@supabase/supabase-js@2";
+import { encryptToken } from "../_shared/instagram.js";
 
 const hash = async (value: string) => {
   const digest = await crypto.subtle.digest(
@@ -8,25 +9,6 @@ const hash = async (value: string) => {
   return Array.from(new Uint8Array(digest), (byte) =>
     byte.toString(16).padStart(2, "0"),
   ).join("");
-};
-
-const encrypt = async (value: string, encodedKey: string) => {
-  const key = await crypto.subtle.importKey(
-    "raw",
-    Uint8Array.from(atob(encodedKey), (char) => char.charCodeAt(0)),
-    "AES-GCM",
-    false,
-    ["encrypt"],
-  );
-  const iv = crypto.getRandomValues(new Uint8Array(12));
-  const cipher = new Uint8Array(
-    await crypto.subtle.encrypt(
-      { name: "AES-GCM", iv },
-      key,
-      new TextEncoder().encode(value),
-    ),
-  );
-  return `${btoa(String.fromCharCode(...iv))}.${btoa(String.fromCharCode(...cipher))}`;
 };
 
 Deno.serve(async (request) => {
@@ -112,7 +94,7 @@ Deno.serve(async (request) => {
       .single();
     if (accountError) throw accountError;
 
-    const encrypted = await encrypt(
+    const encrypted = await encryptToken(
       long.access_token,
       Deno.env.get("TOKEN_ENCRYPTION_KEY")!,
     );
@@ -124,6 +106,14 @@ Deno.serve(async (request) => {
       ).toISOString(),
     });
     if (tokenError) throw tokenError;
+
+    await fetch(`${Deno.env.get("SUPABASE_URL")}/functions/v1/instagram-sync`, {
+      method: "POST",
+      headers: {
+        authorization: `Bearer ${Deno.env.get("SUPABASE_ANON_KEY")}`,
+        "x-cron-secret": Deno.env.get("CRON_SECRET") ?? "",
+      },
+    }).catch(() => undefined);
 
     return Response.redirect(
       `${oauthState.return_to}?instagram=connected`,

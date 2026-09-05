@@ -68,6 +68,19 @@ export async function beginInstagramConnection(client) {
   return data.url;
 }
 
+/**
+ * @param {import("@supabase/supabase-js").SupabaseClient} client
+ * @returns {Promise<Array<{ account_id: string, status: string }>>}
+ */
+export async function requestInstagramSync(client) {
+  const { data, error } = await client.functions.invoke("instagram-sync");
+  if (error) {
+    const body = await error.context?.json?.().catch(() => null);
+    throw new Error(body?.error ?? "Sinkronisasi Instagram gagal");
+  }
+  return data?.results ?? [];
+}
+
 /** @param {import("@supabase/supabase-js").SupabaseClient} client */
 export async function listInstagramAccounts(client) {
   const { data, error } = await client
