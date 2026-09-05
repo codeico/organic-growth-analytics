@@ -166,7 +166,7 @@ export async function fetchInstagramSnapshot(fetcher, token, now = new Date()) {
     graph(fetcher, "/me/media", {
       ...access,
       fields:
-        "id,caption,media_type,media_product_type,thumbnail_url,permalink,timestamp,like_count,comments_count",
+        "id,caption,media_type,media_product_type,thumbnail_url,media_url,permalink,timestamp,like_count,comments_count",
       limit: "50",
     }),
     demographic("engaged_audience_demographics", "country"),
@@ -257,7 +257,8 @@ export async function fetchInstagramSnapshot(fetcher, token, now = new Date()) {
         caption: item.caption ?? null,
         media_type: item.media_type,
         media_product_type: item.media_product_type ?? null,
-        thumbnail_url: item.thumbnail_url ?? null,
+        // Graph only sets thumbnail_url for VIDEO; images/carousels expose media_url.
+        thumbnail_url: item.thumbnail_url ?? item.media_url ?? null,
         permalink: item.permalink ?? null,
         published_at: item.timestamp,
         likes: item.like_count ?? null,

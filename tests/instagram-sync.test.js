@@ -32,6 +32,7 @@ describe("Instagram sync", () => {
               id: "media-1",
               caption: "Post terbaru",
               media_type: "IMAGE",
+              media_url: "https://cdn.example/img.jpg",
               permalink: "https://instagram.com/p/example",
               timestamp: "2026-09-05T00:00:00Z",
               like_count: 12,
@@ -116,6 +117,7 @@ describe("Instagram sync", () => {
     });
     expect(snapshot.media[0]).toMatchObject({
       instagram_media_id: "media-1",
+      thumbnail_url: "https://cdn.example/img.jpg",
       reach: 80,
       saved: 4,
       shares: 2,

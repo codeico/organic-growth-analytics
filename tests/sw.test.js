@@ -5,7 +5,7 @@ const sw = readFileSync(new URL("../public/sw.js", import.meta.url), "utf8");
 
 describe("service worker", () => {
   it("precaches the public app shell without private data", () => {
-    expect(sw).toContain('const CACHE = "oga-shell-v8"');
+    expect(sw).toContain('const CACHE = "oga-shell-v9"');
     expect(sw).toContain('"/index.html"');
     expect(sw).toContain('"/offline.html"');
     expect(sw).not.toMatch(/token|functions\/v1/);

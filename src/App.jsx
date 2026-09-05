@@ -953,14 +953,29 @@ function AnalyticsDashboard({ accounts, analytics, online, view }) {
                         <tr key={item.id}>
                           <td>
                             <a
+                              className="media-cell"
                               href={item.permalink || undefined}
                               target="_blank"
                               rel="noreferrer"
                             >
-                              {item.caption?.trim().slice(0, 80) ||
-                                item.media_type}
+                              {item.thumbnail_url ? (
+                                <img
+                                  src={item.thumbnail_url}
+                                  alt=""
+                                  loading="lazy"
+                                  width="56"
+                                  height="56"
+                                />
+                              ) : (
+                                <span className="media-thumb-empty" />
+                              )}
+                              <span>
+                                <span className="media-caption">
+                                  {item.caption?.trim() || item.media_type}
+                                </span>
+                                <small>{formatDate(item.published_at)}</small>
+                              </span>
                             </a>
-                            <small>{formatDate(item.published_at)}</small>
                           </td>
                           <td>{item.media_product_type ?? item.media_type}</td>
                           <td>{formatMetric(item.reach)}</td>
